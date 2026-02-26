@@ -1,0 +1,12 @@
+<div class="sanvii-container">
+    <div class="sanvii-avatar" (click)="toggleChat()">
+      🤖
+    </div>
+  
+    <div class="sanvii-chat" *ngIf="isOpen">
+      <div class="sanvii-header">Sanvii AI</div>
+      <div class="sanvii-body">
+        Hello 👋 I am Sanvii. How can I help?
+      </div>
+    </div>
+  </div>
