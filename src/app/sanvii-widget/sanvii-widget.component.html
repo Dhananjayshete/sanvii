@@ -1,12 +1,161 @@
 <div class="sanvii-container">
-    <div class="sanvii-avatar" (click)="toggleChat()">
-      🤖
-    </div>
-  
-    <div class="sanvii-chat" *ngIf="isOpen">
-      <div class="sanvii-header">Sanvii AI</div>
+
+  <!-- ═══════════════════════════════════
+       CHAT BOX
+       ═══════════════════════════════════ -->
+
+  @if (isOpen) {
+    <div class="sanvii-chat">
+
+      <!-- Header -->
+      <div class="sanvii-header">
+        <div class="header-left">
+          <div class="header-dot"
+               [class.listening]="isListening"
+               [class.speaking]="isSpeaking"
+               [class.thinking]="isThinking">
+          </div>
+          <div class="header-info">
+            <span class="header-title">Sanvii AI</span>
+            <span class="header-subtitle">
+              @if (isListening) { Listening... }
+              @else if (isThinking) { Thinking... }
+              @else if (isSpeaking) { Speaking... }
+              @else { Online • Ready }
+            </span>
+          </div>
+        </div>
+
+        <div class="header-actions">
+          <button class="hdr-btn" (click)="toggleMute()"
+                  [title]="isMuted ? 'Unmute' : 'Mute'">
+            {{ isMuted ? '🔇' : '🔊' }}
+          </button>
+          <button class="hdr-btn" (click)="clearChat()" title="Clear">🗑️</button>
+          <span class="close-btn" (click)="toggleChat()">✕</span>
+        </div>
+      </div>
+
+      <!-- Messages -->
       <div class="sanvii-body">
-        Hello 👋 I am Sanvii. How can I help?
+
+        @if (messages.length === 0) {
+          <!-- Welcome card -->
+          <div class="welcome-card">
+            <div class="welcome-icon">🟣</div>
+            <p class="welcome-title">Hi, I'm Sanvii!</p>
+            <p class="welcome-sub">Your personal AI assistant. Try:</p>
+            <div class="quick-actions">
+              <button (click)="handleUserMessage('What can you do?')">💡 Abilities</button>
+              <button (click)="handleUserMessage('Play Kesariya on YouTube')">🎵 Play song</button>
+              <button (click)="handleUserMessage('Tell me a joke')">😂 Joke</button>
+              <button (click)="handleUserMessage('What time is it?')">⏰ Time</button>
+            </div>
+          </div>
+        }
+
+        @for (msg of messages; track $index) {
+          <div class="msg-row" [class.user-row]="msg.sender === 'user'"
+               [class.ai-row]="msg.sender === 'ai'">
+
+            @if (msg.sender === 'ai') {
+              <div class="msg-avatar ai-av">🟣</div>
+            }
+
+            <div class="msg-wrap">
+              <div [class.user-msg]="msg.sender === 'user'"
+                   [class.ai-msg]="msg.sender === 'ai'">
+                {{ msg.text }}
+
+                @if (msg.action) {
+                  <button class="action-link" (click)="executeAction(msg.action)">
+                    {{ msg.action.label || '🔗 Open' }}
+                  </button>
+                }
+              </div>
+              <span class="msg-time">{{ msg.time }}</span>
+            </div>
+
+            @if (msg.sender === 'user') {
+              <div class="msg-avatar user-av">👤</div>
+            }
+          </div>
+        }
+
+        <!-- Thinking dots -->
+        @if (isThinking) {
+          <div class="msg-row ai-row">
+            <div class="msg-avatar ai-av">🟣</div>
+            <div class="ai-msg thinking">
+              <span>.</span><span>.</span><span>.</span>
+            </div>
+          </div>
+        }
+      </div>
+
+      <!-- Input Footer -->
+      <div class="sanvii-footer">
+        <input
+          type="text"
+          [(ngModel)]="typedInput"
+          (keydown.enter)="sendTypedMessage()"
+          [placeholder]="isListening ? '🎤 Listening...' : 'Type a message...'"
+          [disabled]="isThinking" />
+
+        <button class="mic-btn"
+                [class.active]="isListening"
+                (click)="toggleListening()">
+          @if (isListening) {
+            <div class="mic-waves-mini">
+              <span></span><span></span><span></span>
+            </div>
+          } @else {
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
+                 fill="currentColor" viewBox="0 0 16 16">
+              <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
+              <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5
+                       5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5
+                       5 0 0 1 3.5 8V7a.5.5 0 0 1 .5-.5z"/>
+            </svg>
+          }
+        </button>
+
+        <button class="send-btn"
+                [disabled]="!typedInput.trim() || isThinking"
+                (click)="sendTypedMessage()">
+          ➤
+        </button>
       </div>
     </div>
-  </div>
+  }
+
+  <!-- ═══════════════════════════════════
+       AVATAR (Always visible)
+       ═══════════════════════════════════ -->
+
+    <!-- ═══════════════════════════════════
+       AVATAR (Always visible)
+       ═══════════════════════════════════ -->
+
+       <div class="sanvii-avatar-wrapper" (click)="toggleChat()">
+        <div class="sanvii-avatar"
+             [class.speaking-animation]="isSpeaking"
+             [class.listening-animation]="isListening"
+             [class.thinking-animation]="isThinking">
+    
+          <!-- Same path that worked in your old code -->
+          <img src="sanvii.png" alt="Sanvii"
+               onerror="this.style.display='none'; this.parentElement.classList.add('fallback-avatar')">
+          <span class="fallback-emoji">🟣</span>
+        </div>
+    
+        <!-- Status dot -->
+        <div class="status-dot"
+             [class.recording]="isListening"
+             [class.speaking-dot]="isSpeaking"
+             [class.thinking-dot]="isThinking">
+        </div>
+    
+        <!-- Name label -->
+        <div class="avatar-name">SANVII</div>
+      </div>

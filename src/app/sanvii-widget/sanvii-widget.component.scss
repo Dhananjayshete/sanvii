@@ -1,49 +1,636 @@
+// ═══════════════════════════════════════════════
+//  SANVII COLOR PALETTE
+// ═══════════════════════════════════════════════
+
+$purple:       #6a11cb;
+$blue:         #2575fc;
+$gradient:     linear-gradient(135deg, $purple, $blue);
+$green:        #00ff88;
+$red:          #ff4b2b;
+$amber:        #f59e0b;
+$cyan:         #06b6d4;
+
+$bg-chat:      #f4f7f6;
+$bg-white:     #ffffff;
+$text-dark:    #333333;
+$text-muted:   #999999;
+$text-light:   #666666;
+
+$radius:       18px;
+$radius-msg:   14px;
+$shadow-heavy: 0 10px 40px rgba(0, 0, 0, 0.18);
+$shadow-light: 0 2px 8px rgba(0, 0, 0, 0.08);
+
+// ═══════════════════════════════════════════════
+//  CONTAINER
+// ═══════════════════════════════════════════════
+
 .sanvii-container {
-    position: fixed;
-    bottom: 20px;
-    left: 20px;
-    z-index: 9999;
-    font-family: Arial, sans-serif;
-  }
-  
-  /* Avatar button */
-  .sanvii-avatar {
-    width: 60px;
-    height: 60px;
-    background: linear-gradient(135deg, #6a11cb, #2575fc);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    cursor: pointer;
-    color: white;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.25);
-    transition: transform 0.2s ease;
-  }
-  
-  .sanvii-avatar:hover {
+  position: fixed;
+  bottom: 25px;
+  right: 25px;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 14px;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  user-select: none;
+}
+
+// ═══════════════════════════════════════════════
+//  AVATAR
+// ═══════════════════════════════════════════════
+
+.sanvii-avatar-wrapper {
+  position: relative;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: float 3s ease-in-out infinite;
+
+  &:hover .sanvii-avatar {
     transform: scale(1.08);
+    box-shadow: 0 8px 25px rgba($blue, 0.5);
   }
-  
-  /* Chat box */
-  .sanvii-chat {
-    width: 260px;
-    background: white;
-    border-radius: 14px;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    margin-bottom: 10px;
-    overflow: hidden;
+}
+
+.sanvii-avatar {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  border: 3px solid $bg-white;
+  overflow: hidden;
+  background: $gradient;
+  box-shadow: 0 5px 20px rgba($blue, 0.3);
+  transition: all 0.3s ease;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: top;
+    position: relative;
+    z-index: 1;
   }
-  
-  .sanvii-header {
-    background: #2575fc;
+
+  .fallback-emoji {
+    position: absolute;
+    font-size: 32px;
+    z-index: 0;
+  }
+
+  // When image loads, hide fallback
+  &:not(.fallback-avatar) .fallback-emoji {
+    display: none;
+  }
+
+  &.fallback-avatar {
+    img { display: none; }
+    .fallback-emoji { display: block; z-index: 1; }
+  }
+}
+
+// ── Speaking animation ──
+.speaking-animation {
+  border-color: $blue !important;
+  animation: speakPulse 1.5s infinite !important;
+}
+
+@keyframes speakPulse {
+  0%  { box-shadow: 0 0 0 0 rgba($blue, 0.6); }
+  70% { box-shadow: 0 0 0 14px rgba($blue, 0); }
+  100%{ box-shadow: 0 0 0 0 rgba($blue, 0); }
+}
+
+// ── Listening animation ──
+.listening-animation {
+  border-color: $red !important;
+  animation: listenPulse 1.2s infinite !important;
+}
+
+@keyframes listenPulse {
+  0%  { box-shadow: 0 0 0 0 rgba($red, 0.5); }
+  70% { box-shadow: 0 0 0 12px rgba($red, 0); }
+  100%{ box-shadow: 0 0 0 0 rgba($red, 0); }
+}
+
+// ── Thinking animation ──
+.thinking-animation {
+  border-color: $amber !important;
+  animation: thinkPulse 1s infinite !important;
+}
+
+@keyframes thinkPulse {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.05); }
+}
+
+// ── Float ──
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-6px); }
+}
+
+// ── Status Dot ──
+.status-dot {
+  position: absolute;
+  bottom: 18px;
+  right: -2px;
+  width: 14px;
+  height: 14px;
+  background: $green;
+  border: 2px solid $bg-white;
+  border-radius: 50%;
+  z-index: 5;
+  transition: all 0.3s;
+
+  &.recording {
+    background: $red;
+    box-shadow: 0 0 8px $red;
+    animation: dotBlink 1s infinite;
+  }
+
+  &.speaking-dot {
+    background: $blue;
+    box-shadow: 0 0 8px rgba($blue, 0.5);
+  }
+
+  &.thinking-dot {
+    background: $amber;
+    box-shadow: 0 0 8px rgba($amber, 0.5);
+    animation: dotBlink 0.6s infinite;
+  }
+}
+
+@keyframes dotBlink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+// ── Name Label ──
+.avatar-name {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: $blue;
+  text-align: center;
+}
+
+// ═══════════════════════════════════════════════
+//  CHAT BOX
+// ═══════════════════════════════════════════════
+
+.sanvii-chat {
+  width: 340px;
+  background: $bg-white;
+  border-radius: $radius;
+  box-shadow: $shadow-heavy;
+  overflow: hidden;
+  animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  display: flex;
+  flex-direction: column;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(15px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+// ── Header ──
+.sanvii-header {
+  background: $gradient;
+  color: white;
+  padding: 12px 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.header-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: $green;
+  box-shadow: 0 0 6px rgba($green, 0.6);
+  transition: all 0.3s;
+
+  &.listening {
+    background: $red;
+    box-shadow: 0 0 6px $red;
+    animation: dotBlink 0.8s infinite;
+  }
+
+  &.speaking {
+    background: $green;
+    animation: dotBlink 1s infinite;
+  }
+
+  &.thinking {
+    background: $amber;
+    animation: dotBlink 0.5s infinite;
+  }
+}
+
+.header-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.header-title {
+  font-weight: 600;
+  font-size: 14px;
+  letter-spacing: 0.5px;
+}
+
+.header-subtitle {
+  font-size: 10px;
+  opacity: 0.85;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.hdr-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: rgba(#fff, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+
+  &:hover {
+    background: rgba(#fff, 0.25);
+  }
+}
+
+.close-btn {
+  font-size: 18px;
+  cursor: pointer;
+  opacity: 0.8;
+  padding: 0 4px;
+  margin-left: 4px;
+  transition: opacity 0.2s;
+
+  &:hover {
+    opacity: 1;
+  }
+}
+
+// ── Messages Body ──
+.sanvii-body {
+  height: 320px;
+  overflow-y: auto;
+  padding: 14px;
+  background: $bg-chat;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  &::-webkit-scrollbar { width: 4px; }
+  &::-webkit-scrollbar-track { background: transparent; }
+  &::-webkit-scrollbar-thumb {
+    background: rgba($blue, 0.2);
+    border-radius: 2px;
+  }
+}
+
+// Welcome card
+.welcome-card {
+  text-align: center;
+  padding: 16px 10px;
+
+  .welcome-icon {
+    font-size: 36px;
+    margin-bottom: 8px;
+  }
+
+  .welcome-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: $text-dark;
+    margin-bottom: 4px;
+  }
+
+  .welcome-sub {
+    font-size: 12px;
+    color: $text-muted;
+    margin-bottom: 12px;
+  }
+}
+
+.quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+
+  button {
+    padding: 5px 10px;
+    border: 1px solid rgba($blue, 0.2);
+    border-radius: 16px;
+    background: rgba($blue, 0.04);
+    color: $blue;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      background: rgba($blue, 0.12);
+      border-color: rgba($blue, 0.4);
+    }
+  }
+}
+
+// ── Messages ──
+.msg-row {
+  display: flex;
+  gap: 8px;
+  max-width: 88%;
+  animation: msgPop 0.3s ease-out;
+
+  &.user-row {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  &.ai-row {
+    align-self: flex-start;
+  }
+}
+
+@keyframes msgPop {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.msg-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ai-av {
+  background: $gradient;
+}
+
+.user-av {
+  background: linear-gradient(135deg, #334155, #475569);
+}
+
+.msg-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.ai-msg, .user-msg {
+  padding: 10px 14px;
+  border-radius: $radius-msg;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 100%;
+  word-break: break-word;
+  white-space: pre-line;
+}
+
+.ai-msg {
+  background: $bg-white;
+  color: $text-dark;
+  border-bottom-left-radius: 3px;
+  box-shadow: $shadow-light;
+}
+
+.user-msg {
+  background: $gradient;
+  color: white;
+  border-bottom-right-radius: 3px;
+}
+
+.msg-time {
+  font-size: 10px;
+  color: $text-muted;
+  margin-top: 3px;
+  padding: 0 4px;
+
+  .user-row & {
+    text-align: right;
+  }
+}
+
+// Action button inside AI message
+.action-link {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 5px 12px;
+  border: 1px solid rgba($blue, 0.25);
+  border-radius: 14px;
+  background: rgba($blue, 0.06);
+  color: $blue;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover {
+    background: rgba($blue, 0.15);
+    border-color: rgba($blue, 0.5);
+    transform: translateY(-1px);
+  }
+}
+
+// ── Thinking Dots ──
+.thinking {
+  padding: 12px 18px !important;
+  display: flex;
+  gap: 2px;
+
+  span {
+    font-size: 22px;
+    line-height: 10px;
+    animation: blink 1.4s infinite both;
+    color: $text-muted;
+
+    &:nth-child(2) { animation-delay: 0.2s; }
+    &:nth-child(3) { animation-delay: 0.4s; }
+  }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 1; }
+}
+
+// ── Footer ──
+.sanvii-footer {
+  padding: 10px 12px;
+  background: $bg-white;
+  border-top: 1px solid #eee;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  input {
+    flex: 1;
+    height: 38px;
+    border: 1px solid #e2e2e2;
+    border-radius: 20px;
+    padding: 0 14px;
+    font-size: 13px;
+    color: $text-dark;
+    outline: none;
+    background: #fafafa;
+    transition: border-color 0.2s;
+
+    &::placeholder {
+      color: #bbb;
+    }
+
+    &:focus {
+      border-color: $blue;
+      background: $bg-white;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+    }
+  }
+}
+
+.mic-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: #f0f2f5;
+  color: $blue;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+
+  &:hover {
+    background: rgba($blue, 0.1);
+  }
+
+  &.active {
+    background: $red;
     color: white;
-    padding: 10px;
-    font-weight: bold;
+    animation: pulseMic 1.5s infinite;
   }
-  
-  .sanvii-body {
-    padding: 12px;
-    font-size: 14px;
+}
+
+@keyframes pulseMic {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.08); }
+}
+
+// Mic mini waves (when listening)
+.mic-waves-mini {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 16px;
+
+  span {
+    width: 2px;
+    height: 8px;
+    border-radius: 1px;
+    background: white;
+    animation: miniWave 0.8s ease-in-out infinite;
+
+    &:nth-child(2) {
+      animation-delay: 0.15s;
+      height: 12px;
+    }
+    &:nth-child(3) {
+      animation-delay: 0.3s;
+      height: 6px;
+    }
   }
+}
+
+@keyframes miniWave {
+  0%, 100% { transform: scaleY(0.5); }
+  50%      { transform: scaleY(1.3); }
+}
+
+.send-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  border: none;
+  background: $gradient;
+  color: white;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    transform: scale(1.06);
+    box-shadow: 0 3px 12px rgba($blue, 0.35);
+  }
+
+  &:disabled {
+    opacity: 0.3;
+    cursor: default;
+    transform: none;
+  }
+}
+
+// ═══════════════════════════════════════════════
+//  RESPONSIVE
+// ═══════════════════════════════════════════════
+
+@media (max-width: 480px) {
+  .sanvii-chat {
+    width: calc(100vw - 40px);
+  }
+
+  .sanvii-container {
+    bottom: 16px;
+    right: 16px;
+  }
+}
