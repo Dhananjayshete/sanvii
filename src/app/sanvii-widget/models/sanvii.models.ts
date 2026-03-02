@@ -21,7 +21,7 @@ export interface SanviiAction {
 }
 
 export interface SanviiCard {
-  type: 'weather' | 'news' | 'todo' | 'note' | 'reminder' | 'stats' | 'briefing' | 'currency' | 'timer';
+  type: 'weather' | 'news' | 'todo' | 'note' | 'reminder' | 'stats' | 'briefing' | 'currency' | 'timer' | 'export';
   data: any;
 }
 
@@ -166,3 +166,85 @@ export const DEFAULT_MEMORY: SanviiMemory = {
   mood: 'neutral',
   preferences: {}
 };
+// ═══════════════════════════════════════════════
+//  RICH CARD DATA TYPES (NEW)
+// ═══════════════════════════════════════════════
+
+export interface WeatherCardData {
+  city: string;
+  temp: number;
+  feelsLike: number;
+  humidity: number;
+  wind: number;
+  description: string;
+  icon: string;
+  forecast: WeatherForecast[];
+}
+
+export interface NewsCardData {
+  headlines: { title: string; source: string; url: string }[];
+}
+
+export interface TodoCardData {
+  items: SanviiTodo[];
+  pendingCount: number;
+  completedCount: number;
+}
+
+export interface TimerCardData {
+  id: string;
+  label: string;
+  remaining: number;
+  total: number;
+  active: boolean;
+}
+
+export interface StatsCardData {
+  conversations: number;
+  tasksCompleted: number;
+  tasksTotal: number;
+  searchesMade: number;
+  websitesOpened: number;
+  songsPlayed: number;
+  score: number;
+  yesterdayScore: number | null;
+}
+
+export interface YoutubeCardData {
+  query: string;
+  url: string;
+  thumbnail: string;
+}
+
+export interface ReminderCardData {
+  message: string;
+  timeStr: string;
+  id: string;
+}
+
+export interface BriefingCardData {
+  date: string;
+  weather?: string;
+  pendingTasks: number;
+  reminders: number;
+  quote: string;
+}
+
+export interface LinkCardData {
+  url: string;
+  title: string;
+  icon: string;
+}
+
+// Update the SanviiCard type to use union
+export type CardType =
+  | 'weather'
+  | 'news'
+  | 'todo'
+  | 'timer'
+  | 'stats'
+  | 'youtube'
+  | 'reminder'
+  | 'briefing'
+  | 'link'
+  | 'export';

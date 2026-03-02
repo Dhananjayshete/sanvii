@@ -9,7 +9,7 @@
   @if (isOpen) {
     <div class="sanvii-chat" [style.width.px]="settings.chatWidth">
 
-      <!-- ── Header ── -->
+      <!-- Header -->
       <div class="sanvii-header">
         <div class="header-left">
           <div class="header-dot"
@@ -18,7 +18,12 @@
                [class.thinking]="isThinking"></div>
           <div class="header-info">
             <span class="header-title">Sanvii AI</span>
-            <span class="header-subtitle">{{ statusText }}</span>
+            <span class="header-subtitle">
+              @if (isListening) { 🎤 Listening... }
+              @else if (isThinking) { 🧠 Thinking... }
+              @else if (isSpeaking) { 🔊 Speaking... }
+              @else { {{ ai.isGPTAvailable() ? '🧠 AI Connected' : '💡 Local Mode' }} }
+            </span>
           </div>
         </div>
 
@@ -32,7 +37,7 @@
         </div>
       </div>
 
-      <!-- ── Active Timers Bar ── -->
+      <!-- Active Timers -->
       @if (activeTimers.length > 0) {
         <div class="timers-bar">
           @for (timer of activeTimers; track timer.id) {
@@ -44,7 +49,7 @@
         </div>
       }
 
-      <!-- ── Settings Panel ── -->
+      <!-- Settings Panel -->
       @if (showSettings) {
         <div class="settings-panel">
           <h3>⚙️ Settings</h3>
@@ -66,8 +71,7 @@
 
           <div class="setting-row">
             <label>Voice</label>
-            <select [value]="settings.voiceType"
-                    (change)="onSettingChange('voiceType', $any($event.target).value)">
+            <select [value]="settings.voiceType" (change)="onSettingChange('voiceType', $any($event.target).value)">
               <option value="default">Default</option>
               @for (v of availableVoices; track v.name) {
                 <option [value]="v.name">{{ v.name }}</option>
@@ -77,28 +81,19 @@
 
           <div class="setting-row">
             <label>Speed</label>
-            <input type="range" min="0.5" max="2" step="0.1"
-                   [value]="settings.voiceSpeed"
+            <input type="range" min="0.5" max="2" step="0.1" [value]="settings.voiceSpeed"
                    (input)="onSettingChange('voiceSpeed', +$any($event.target).value)">
             <span>{{ settings.voiceSpeed }}x</span>
           </div>
 
-          <div class="setting-row">
-            <label>Pitch</label>
-            <input type="range" min="0.5" max="2" step="0.1"
-                   [value]="settings.voicePitch"
-                   (input)="onSettingChange('voicePitch', +$any($event.target).value)">
-            <span>{{ settings.voicePitch }}</span>
-          </div>
-
           <div class="setting-row toggle-row">
-            <label>Auto-speak replies</label>
+            <label>Auto-speak</label>
             <input type="checkbox" [checked]="settings.autoSpeak"
                    (change)="onSettingChange('autoSpeak', $any($event.target).checked)">
           </div>
 
           <div class="setting-row toggle-row">
-            <label>Wake word ("Hey Sanvii")</label>
+            <label>Wake word</label>
             <input type="checkbox" [checked]="settings.wakeWordEnabled"
                    (change)="onSettingChange('wakeWordEnabled', $any($event.target).checked)">
           </div>
@@ -128,26 +123,28 @@
         </div>
       }
 
-      <!-- ── Messages ── -->
+      <!-- Messages -->
       @if (!showSettings) {
         <div class="sanvii-body" #chatBody>
 
+          <!-- Welcome Card -->
           @if (messages.length === 0) {
             <div class="welcome-card">
               <div class="welcome-icon">🟣</div>
               <p class="welcome-title">Hi, I'm Sanvii!</p>
-              <p class="welcome-sub">Your personal AI assistant. Try:</p>
+              <p class="welcome-sub">Your AI assistant. Try:</p>
               <div class="quick-actions">
                 <button (click)="handleUserMessage('What can you do?')">💡 Abilities</button>
-                <button (click)="handleUserMessage('Play Kesariya on YouTube')">🎵 Play song</button>
+                <button (click)="handleUserMessage('Play Kesariya on YouTube')">🎵 Music</button>
                 <button (click)="handleUserMessage('Tell me a joke')">😂 Joke</button>
-                <button (click)="handleUserMessage('What time is it?')">⏰ Time</button>
-                <button (click)="handleUserMessage('Show my to-do list')">📋 To-Do</button>
                 <button (click)="handleUserMessage('Weather in Mumbai')">🌤️ Weather</button>
+                <button (click)="handleUserMessage('Show my to-do list')">📋 To-Do</button>
+                <button (click)="handleUserMessage('Latest news')">📰 News</button>
               </div>
             </div>
           }
 
+          <!-- Message Loop -->
           @for (msg of messages; track msg.id) {
             <div class="msg-row"
                  [class.user-row]="msg.sender === 'user'"
@@ -158,34 +155,148 @@
               }
 
               <div class="msg-wrap">
+                <!-- Text Bubble -->
                 <div [class.user-msg]="msg.sender === 'user'"
                      [class.ai-msg]="msg.sender === 'ai'">
-                  <p class="msg-text">{{ msg.text }}</p>
+                  <p class="msg-text" [innerHTML]="msg.text | sanviiFormat"></p>
 
+                  <!-- Action Button -->
                   @if (msg.action) {
                     <button class="action-link" (click)="executeAction(msg.action)">
                       {{ msg.action.label || '🔗 Open' }}
                     </button>
                   }
+                </div>
 
-                  <!-- Export options card -->
-                  @if (msg.card?.type === 'todo' && msg.card?.data?.options) {
-                    <div class="export-options">
+                <!-- ═════════════════════════════════
+                     RICH CARDS
+                     ═════════════════════════════════ -->
+
+                <!-- Weather Card -->
+                @if (msg.card?.type === 'weather' && msg.card?.data) {
+                  <div class="rich-card weather-card">
+                    <div class="weather-main">
+                      <span class="weather-icon">{{ msg.card?.data?.icon }}</span>
+                      <div class="weather-temp">
+                        <span class="temp-value">{{msg.card?.data?.temp }}°C</span>
+                        <span class="temp-feels">Feels like {{ msg.card?.data?.feelsLike }}°C</span>
+                      </div>
+                    </div>
+                    <div class="weather-city">{{ msg.card?.data?.city }}</div>
+                    <div class="weather-desc">{{ msg.card?.data?.description }}</div>
+                    <div class="weather-details">
+                      <span>💧 {{ msg.card?.data?.humidity }}%</span>
+                      <span>💨 {{ msg.card?.data?.wind }} km/h</span>
+                    </div>
+                    @if ((msg.card?.data?.forecast?.length ?? 0) > 0) {
+                                            <div class="weather-forecast">
+                        @for (day of msg.card?.data?.forecast ?? []; track day.day) {
+                          <div class="forecast-day">
+                            <span class="fc-day">{{ day.day }}</span>
+                            <span class="fc-temp">{{ day.temp }}°</span>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+
+               <!-- News Card -->
+@if (
+  msg.card?.type === 'news' &&
+  (msg.card?.data?.headlines?.length ?? 0) > 0
+) {
+  <div class="rich-card news-card">
+    @for (item of msg.card?.data?.headlines ?? []; track item.title; let i = $index) {
+      <a class="news-item" [href]="item.url" target="_blank">
+        <span class="news-num">{{ i + 1 }}</span>
+        <div class="news-content">
+          <span class="news-title">{{ item.title }}</span>
+          <span class="news-source">{{ item.source }}</span>
+        </div>
+        <span class="news-arrow">→</span>
+      </a>
+    }
+  </div>
+}<!-- To-Do Card -->
+@if (
+  msg.card?.type === 'todo' &&
+  (msg.card?.data?.items?.length ?? 0) > 0
+) {
+  <div class="rich-card todo-card">
+    <div class="todo-header">
+      <span>📋 To-Do List</span>
+      <span class="todo-count">{{ msg.card?.data?.pendingCount }} pending</span>
+    </div>
+
+    @for (item of msg.card?.data?.items ?? []; track item.id) {
+      <div class="todo-item" [class.done]="item.done"
+           (click)="toggleTodoFromCard(item.id)">
+        <span class="todo-check">{{ item.done ? '✅' : '☐' }}</span>
+        <span class="todo-text">{{ item.text }}</span>
+      </div>
+    }
+  </div>
+}
+                <!-- Stats Card -->
+                @if (msg.card?.type === 'stats' && msg.card?.data) {
+                  <div class="rich-card stats-card">
+                    <div class="stats-header">📊 Today's Productivity</div>
+                    <div class="stats-score">
+                      <div class="score-bar">
+                        <div class="score-fill"
+                             [style.width]="getScoreBarWidth(msg.card?.data?.score)"
+                             [style.background]="getScoreColor(msg.card?.data?.score)">
+                        </div>
+                      </div>
+                      <span class="score-value">{{ msg.card?.data?.score }}/100</span>
+                    </div>
+                    <div class="stats-grid">
+                      <div class="stat-item">
+                        <span class="stat-icon">💬</span>
+                        <span class="stat-val">{{ msg.card?.data?.conversations }}</span>
+                        <span class="stat-label">Chats</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-icon">✅</span>
+                        <span class="stat-val">{{ msg.card?.data?.tasksCompleted }}</span>
+                        <span class="stat-label">Done</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-icon">🔍</span>
+                        <span class="stat-val">{{ msg.card?.data?.searchesMade }}</span>
+                        <span class="stat-label">Searches</span>
+                      </div>
+                      <div class="stat-item">
+                        <span class="stat-icon">🎵</span>
+                        <span class="stat-val">{{ msg.card?.data?.songsPlayed }}</span>
+                        <span class="stat-label">Songs</span>
+                      </div>
+                    </div>
+                    @if (msg.card?.data?.yesterdayScore !== null) {
+                      <div class="stats-compare">
+                        {{ msg.card?.data?.score >= msg.card?.data?.yesterdayScore ? '📈' : '📉' }}
+                        {{ msg.card?.data?.score - msg.card?.data?.yesterdayScore >= 0 ? '+' : '' }}{{ msg.card?.data?.score - msg.card?.data?.yesterdayScore }} from yesterday
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Export Options Card -->
+                @if (msg.card?.type === 'export' || (msg.card?.type === 'todo' && msg.card?.data?.options)) {
+                  @if (msg.card?.data?.options) {
+                    <div class="rich-card export-card">
                       @for (opt of msg.card!.data.options; track opt.format) {
-                        <button class="export-btn" (click)="exportChat(opt.format)">
+                        <button class="export-option" (click)="exportChat(opt.format)">
                           {{ opt.label }}
                         </button>
                       }
                     </div>
                   }
-                </div>
-                <span class="header-subtitle">
-                  @if (isListening) { 🎤 Listening... }
-                  @else if (isThinking) { 🧠 Thinking... }
-                  @else if (isSpeaking) { 🔊 Speaking... }
-                  @else { {{ ai.isGPTAvailable() ? '🧠 AI Connected' : '💡 Local Mode' }} }
-                </span>
-                            </div>
+                }
+
+                <span class="msg-time">{{ msg.time }}</span>
+              </div>
 
               @if (msg.sender === 'user') {
                 <div class="msg-avatar user-av">👤</div>
@@ -193,6 +304,7 @@
             </div>
           }
 
+          <!-- Thinking Dots -->
           @if (isThinking) {
             <div class="msg-row ai-row">
               <div class="msg-avatar ai-av">🟣</div>
@@ -203,7 +315,7 @@
           }
         </div>
 
-        <!-- ── Input ── -->
+        <!-- Input Footer -->
         <div class="sanvii-footer">
           <input type="text"
                  [(ngModel)]="typedInput"
@@ -238,7 +350,7 @@
   }
 
   <!-- ═══════════════════════════════════
-       AVATAR
+       AVATAR (Always visible)
        ═══════════════════════════════════ -->
 
   <div class="sanvii-avatar-wrapper" (click)="toggleChat()">

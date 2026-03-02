@@ -5,6 +5,7 @@ import {
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Subject, takeUntil } from 'rxjs';
+import { SanviiFormatPipe } from './pipes/format.pipe';
 
 // Services
 import { MemoryService } from './services/memory.service';
@@ -33,7 +34,7 @@ declare var webkitSpeechRecognition: any;
 @Component({
   selector: 'sanvii-widget',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, SanviiFormatPipe],
   templateUrl: './sanvii-widget.component.html',
   styleUrls: ['./sanvii-widget.component.scss']
 })
@@ -54,6 +55,13 @@ export class SanviiWidgetComponent implements OnInit, OnDestroy {
   typedInput = '';
   currentMood = 'neutral';
   avatarExpression = 'idle'; // idle, happy, thinking, surprised, speaking, sad
+  // ═══════════════════════════════════════
+//  TYPING ANIMATION
+// ═══════════════════════════════════════
+
+typingText = '';
+isTypingAnimation = false;
+private typingInterval: any;
 
   messages: SanviiMessage[] = [];
   activeTimers: TimerData[] = [];
@@ -413,6 +421,36 @@ export class SanviiWidgetComponent implements OnInit, OnDestroy {
       if (el) el.scrollTop = el.scrollHeight;
     }, 50);
   }
+  // ═══════════════════════════════════════
+//  ANIMATED TYPING EFFECT
+// ═══════════════════════════════════════
+
+async animateTyping(text: string): Promise<void> {
+  return new Promise((resolve) => {
+    this.isTypingAnimation = true;
+    this.typingText = '';
+    let index = 0;
+
+    this.typingInterval = setInterval(() => {
+      if (index < text.length) {
+        this.typingText += text[index];
+        index++;
+        this.scrollToBottom();
+      } else {
+        clearInterval(this.typingInterval);
+        this.isTypingAnimation = false;
+        resolve();
+      }
+    }, 20);
+  });
+}
+
+stopTypingAnimation(): void {
+  if (this.typingInterval) {
+    clearInterval(this.typingInterval);
+    this.isTypingAnimation = false;
+  }
+}
 
   clearChat(): void {
     this.messages = [];
@@ -534,6 +572,7 @@ Enter — Send message`;
 
     // Detect mood from user message
     this.detectMood(text);
+    
 
     // ═══════════════════════════════════════
     //  STEP 1: Handle LOCAL-ONLY commands
@@ -581,7 +620,67 @@ Enter — Send message`;
     this.speak(fallback.reply);
     this.resetAvatarExpression();
   }
+// ═══════════════════════════════════════
+//  CARD GENERATORS
+// ═══════════════════════════════════════
 
+generateWeatherCard(weather: any): SanviiCard {
+  return {
+    type: 'weather',
+    data: {
+      city: weather.city,
+      temp: weather.temp,
+      feelsLike: weather.feelsLike,
+      humidity: weather.humidity,
+      wind: weather.wind,
+      description: weather.description,
+      icon: weather.icon,
+      forecast: weather.forecast || []
+    }
+  };
+}
+
+generateTodoCard(): SanviiCard {
+  const all = this.todos.getAll();
+  return {
+    type: 'todo',
+    data: {
+      items: all,
+      pendingCount: all.filter((t: any) => !t.done).length,
+      completedCount: all.filter((t: any) => t.done).length
+    }
+  };
+}
+
+generateStatsCard(): SanviiCard {
+  const today = this.stats.getTodayStats();
+  const yesterday = this.stats.getYesterdayStats();
+
+  return {
+    type: 'stats',
+    data: {
+      conversations: today.conversations,
+      tasksCompleted: today.tasksCompleted,
+      tasksTotal: today.tasksTotal,
+      searchesMade: today.searchesMade,
+      websitesOpened: today.websitesOpened,
+      songsPlayed: today.songsPlayed,
+      score: today.score,
+      yesterdayScore: yesterday?.score || null
+    }
+  };
+}
+
+generateYoutubeCard(query: string): SanviiCard {
+  return {
+    type: 'youtube' as any,
+    data: {
+      query: query,
+      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+      thumbnail: `https://img.youtube.com/vi/default/hqdefault.jpg`
+    }
+  };
+}
   // ═══════════════════════════════════════
   //  LOCAL COMMANDS (always handled locally)
   // ═══════════════════════════════════════
@@ -634,10 +733,10 @@ Enter — Send message`;
     }
 
     // ── To-Do: Show ──
-    if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
-      return { reply: this.todos.getFormattedList() };
-    }
-
+if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
+  const card = this.generateTodoCard();
+  return { reply: `Here's your to-do list 📋`, card };
+}
     // ── To-Do: Complete ──
     if (text.match(/(?:mark|complete|done|finish|check).*(?:task|to.?do)/)) {
       const taskText = text.replace(/mark|complete|done|finish|check|task|to.?do|as/gi, '').trim();
@@ -692,9 +791,10 @@ Enter — Send message`;
     }
 
     // ── Stats ──
-    if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
-      return { reply: this.stats.formatStatsCard() };
-    }
+if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
+  const card = this.generateStatsCard();
+  return { reply: `Here are your stats 📊`, card };
+}
 
     // ── Daily Briefing (async) ──
     if (text.match(/brief|daily brief|morning brief/)) {
@@ -930,19 +1030,10 @@ Enter — Send message`;
     }
 
     // ── Default: Search ──
-    this.stats.increment('searchesMade');
-    return {
-      reply: this.rng([
-        `Let me find that for you, ${owner}! 🔍`,
-        `Great question! Searching now. 🔍`,
-        `I'm on it! 🔍`
-      ]),
-      action: {
-        type: 'open_url',
-        url: `https://www.google.com/search?q=${encodeURIComponent(input)}`,
-        label: `🔍 Search "${input.slice(0, 40)}"`
-      }
-    };
+    // ── Default: AI Fallback Without Opening Browser ──
+return {
+  reply: `I'm not sure about that yet, ${owner}. Let me think deeper next time! 🧠`
+};
   }
 
   // ═══════════════════════════════════════
@@ -1044,45 +1135,55 @@ Enter — Send message`;
   async handleWeatherRequest(input: string): Promise<void> {
     const owner = this.settings.ownerName;
     let city = input.replace(/.*weather\s*(in|for|at|of)?\s*/i, '').trim();
-
+  
     if (!city || city === 'weather') {
       city = this.memory.recallFact('location') || 'New York';
     }
-
+  
     this.isThinking = false;
-    this.addMessage('ai', `Checking weather for ${city}... 🌤️`);
-
+  
     const weather = await this.weatherService.getWeather(city);
-
+  
     if (weather) {
-      const formatted = this.weatherService.formatWeatherCard(weather);
-      this.addMessage('ai', formatted);
+      const card = this.generateWeatherCard(weather);
+      const shortReply = `Here's the weather in ${weather.city} 🌤️`;
+      this.addMessage('ai', shortReply, undefined, card);
       this.speak(`It's ${weather.temp} degrees and ${weather.description} in ${weather.city}`);
     } else {
-      const fallback = `Couldn't get weather data. Let me search it! 🔍`;
-      this.addMessage('ai', fallback, {
+      this.addMessage('ai', `Couldn't get weather data.`, {
         type: 'open_url',
         url: `https://www.google.com/search?q=weather+${encodeURIComponent(city)}`,
         label: `🌤️ Weather: ${city}`
       });
-      this.speak(fallback);
     }
   }
 
   async handleNewsRequest(): Promise<void> {
     this.isThinking = false;
-    this.addMessage('ai', `Fetching latest headlines... 📰`);
-
+  
     const news = await this.newsService.getNews();
-    const formatted = this.newsService.formatNewsList(news, 5);
-
-    this.addMessage('ai', `📰 Top Headlines:\n\n${formatted}\n\nWant details on any story?`, {
-      type: 'open_url',
-      url: 'https://news.google.com',
-      label: '📰 Read more on Google News'
-    });
-
-    this.speak('Here are the top headlines');
+  
+    if (news.length > 0) {
+      const card: SanviiCard = {
+        type: 'news',
+        data: {
+          headlines: news.slice(0, 5).map((n: any) => ({
+            title: n.title,
+            source: n.source,
+            url: n.url
+          }))
+        }
+      };
+  
+      this.addMessage('ai', 'Here are the latest headlines 📰', undefined, card);
+      this.speak('Here are the top headlines');
+    } else {
+      this.addMessage('ai', `Couldn't fetch news right now.`, {
+        type: 'open_url',
+        url: 'https://news.google.com',
+        label: '📰 Google News'
+      });
+    }
   }
 
   handleOpenCommand(text: string): { reply: string; action?: SanviiAction } {
@@ -1380,6 +1481,30 @@ Slash commands: /help for full list!`;
     if (this.isThinking) return 'Thinking...';
     if (this.isSpeaking) return 'Speaking...';
     return 'Online';
+  }
+   // ✅ Toggle todo from card
+   toggleTodoFromCard(todoId: string): void {
+    const item = this.todos.getAll().find((t: any) => t.id === todoId);
+    if (!item) return;
+
+    if (!item.done) {
+      this.todos.complete(todoId);
+      this.stats.increment('tasksCompleted');
+      this.sounds.play('success');
+      this.cdr.detectChanges();
+    }
+  }
+
+  // ✅ Score bar width
+  getScoreBarWidth(score: number): string {
+    return Math.min(100, Math.max(0, score)) + '%';
+  }
+
+  // ✅ Score bar color
+  getScoreColor(score: number): string {
+    if (score >= 80) return '#10b981';
+    if (score >= 50) return '#f59e0b';
+    return '#ef4444';
   }
 
   rng(arr: string[]): string {
