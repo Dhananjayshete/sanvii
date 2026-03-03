@@ -51,8 +51,9 @@ $amber: #f59e0b;
 
   &:hover .sanvii-avatar {
     transform: scale(1.08);
-    box-shadow: 0 8px 25px rgba(#2575fc, 0.5);
-  }
+    box-shadow:
+    0 10px 30px rgba(37,117,252,0.4),
+    0 0 20px rgba(106,17,203,0.4);  }
 }
 
 .sanvii-avatar {
@@ -64,6 +65,7 @@ $amber: #f59e0b;
   background: var(--sanvii-gradient);
   box-shadow: 0 5px 20px rgba(#2575fc, 0.3);
   transition: all 0.3s ease;
+  animation: breathe 4s ease-in-out infinite;
   position: relative;
   display: flex;
   align-items: center;
@@ -92,6 +94,10 @@ $amber: #f59e0b;
 }
 
 @keyframes float { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.04); }
+}
 @keyframes speakPulse { 0% { box-shadow: 0 0 0 0 rgba(#2575fc, 0.6); } 70% { box-shadow: 0 0 0 14px rgba(#2575fc, 0); } 100% { box-shadow: 0 0 0 0 rgba(#2575fc, 0); } }
 @keyframes listenPulse { 0% { box-shadow: 0 0 0 0 rgba($red, 0.5); } 70% { box-shadow: 0 0 0 12px rgba($red, 0); } 100% { box-shadow: 0 0 0 0 rgba($red, 0); } }
 @keyframes thinkPulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.05); } }
@@ -135,11 +141,16 @@ $amber: #f59e0b;
 // ═══════════════════════════════════════════════
 
 .sanvii-chat {
-  background: var(--sanvii-bg-chat);
+  background: rgba(26, 26, 46, 0.82);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  border: 1px solid rgba(255,255,255,0.08);
   border-radius: 18px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 25px 70px rgba(0,0,0,0.6),
+    0 0 0 1px rgba(255,255,255,0.03);
   overflow: hidden;
-  animation: slideUp 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  animation: slideUp 0.3s ease-out;
   display: flex;
   flex-direction: column;
   max-height: 600px;
@@ -151,6 +162,7 @@ $amber: #f59e0b;
   background: var(--sanvii-gradient);
   color: white; padding: 12px 16px;
   display: flex; justify-content: space-between; align-items: center;
+  box-shadow: inset 0 -1px 0 rgba(255,255,255,0.08);
 }
 
 .header-left { display: flex; align-items: center; gap: 10px; }
@@ -205,6 +217,7 @@ $amber: #f59e0b;
   flex: 1; overflow-y: auto; padding: 14px;
   background: var(--sanvii-bg-chat);
   display: flex; flex-direction: column; gap: 10px;
+  scroll-behavior: smooth;
   min-height: 250px; max-height: 380px;
 
   &::-webkit-scrollbar { width: 4px; }
@@ -230,9 +243,28 @@ $amber: #f59e0b;
 }
 
 .msg-row {
-  display: flex; gap: 8px; max-width: 88%; animation: msgPop 0.3s ease-out;
-  &.user-row { align-self: flex-end; flex-direction: row-reverse; }
-  &.ai-row { align-self: flex-start; }
+  display: flex;
+  gap: 8px;
+  max-width: 88%;
+  opacity: 0;
+  transform: translateY(8px);
+  animation: msgFadeIn 0.25s ease-out forwards;
+
+  &.user-row {
+    align-self: flex-end;
+    flex-direction: row-reverse;
+  }
+
+  &.ai-row {
+    align-self: flex-start;
+  }
+}
+
+@keyframes msgFadeIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 @keyframes msgPop { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
@@ -256,12 +288,35 @@ $amber: #f59e0b;
 .msg-text { margin: 0; white-space: pre-line; }
 
 .ai-msg {
-  background: var(--sanvii-bg-card); color: var(--sanvii-text-primary);
-  border-bottom-left-radius: 3px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  background: linear-gradient(
+    135deg,
+    rgba(22,33,62,0.95),
+    rgba(18,25,45,0.95)
+  );
+  color: var(--sanvii-text-primary);
+  border-bottom-left-radius: 3px;
+  box-shadow:
+    0 4px 12px rgba(0,0,0,0.25),
+    inset 0 0 0 1px rgba(255,255,255,0.03);
+  position: relative;
+}
+
+.ai-msg::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(
+    135deg,
+    rgba(106,17,203,0.12),
+    rgba(37,117,252,0.12)
+  );
+  z-index: -1;
 }
 
 .user-msg {
   background: var(--sanvii-gradient); color: white; border-bottom-right-radius: 3px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
 }
 
 .msg-time {
@@ -419,9 +474,16 @@ $amber: #f59e0b;
   margin-top: 8px;
   border-radius: 12px;
   overflow: hidden;
-  border: 1px solid rgba(#6a11cb, 0.15);
-  background: rgba(#000, 0.15);
-  animation: cardSlide 0.3s ease-out;
+  border: 1px solid rgba(106,17,203,0.25);
+  background: rgba(22, 33, 62, 0.65);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 25px rgba(0,0,0,0.35);
+  transition: transform 0.25s ease, box-shadow 0.25s ease;
+}
+
+.rich-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
 }
 
 @keyframes cardSlide {
@@ -668,8 +730,10 @@ $amber: #f59e0b;
 
   .score-fill {
     height: 100%;
-    border-radius: 4px;
-    transition: width 0.8s ease-out;
+    background: linear-gradient(90deg, #6a11cb, #2575fc);
+    box-shadow:
+      0 0 12px rgba(106,17,203,0.7),
+      0 0 24px 
   }
 
   .score-value {
