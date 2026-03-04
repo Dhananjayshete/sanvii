@@ -40,10 +40,7 @@ declare var webkitSpeechRecognition: any;
 })
 export class SanviiWidgetComponent implements OnInit, OnDestroy {
 
-  // ═══════════════════════════════════════
-  //  STATE
-  // ═══════════════════════════════════════
-
+  // ─── UI State ───────────────────────────────────────────────────
   isOpen = false;
   isListening = false;
   isThinking = false;
@@ -54,40 +51,43 @@ export class SanviiWidgetComponent implements OnInit, OnDestroy {
   greetingBubble = '';
   typedInput = '';
   currentMood = 'neutral';
-  avatarExpression = 'idle'; // idle, happy, thinking, surprised, speaking, sad
-  // ═══════════════════════════════════════
-//  TYPING ANIMATION
-// ═══════════════════════════════════════
+  avatarExpression = 'idle'; // idle | happy | thinking | speaking | sad | listening
 
-typingText = '';
-isTypingAnimation = false;
-private typingInterval: any;
+  // ─── Streaming State (NEW) ───────────────────────────────────────
+  streamingReply = '';   // holds partial text while tokens arrive
+  isStreaming = false;   // true while Groq is streaming a response
 
+  // ─── Typing Animation ────────────────────────────────────────────
+  typingText = '';
+  isTypingAnimation = false;
+  private typingInterval: any;
+
+  // ─── Data ────────────────────────────────────────────────────────
   messages: SanviiMessage[] = [];
   activeTimers: TimerData[] = [];
 
+  // ─── Voice ───────────────────────────────────────────────────────
   recognition: any;
   selectedVoice: SpeechSynthesisVoice | null = null;
   availableVoices: SpeechSynthesisVoice[] = [];
 
-  // Settings snapshot
+  // ─── Settings ────────────────────────────────────────────────────
   settings!: SanviiSettings;
   themeList: { key: string; name: string }[] = [];
 
-  // Draggable
+  // ─── Drag ────────────────────────────────────────────────────────
   isDragging = false;
   dragPosition = { x: 0, y: 0 };
 
-  // Audio level for mic animation
+  // ─── Audio Analyser (mic visualizer) ─────────────────────────────
   audioLevel = 0;
   private audioCtx: AudioContext | null = null;
   private analyser: AnalyserNode | null = null;
   private micStream: MediaStream | null = null;
   private animFrame = 0;
 
-  // Active time tracker
+  // ─── Internals ───────────────────────────────────────────────────
   private activeTimeInterval: any;
-
   private destroy$ = new Subject<void>();
 
   @ViewChild('chatBody') chatBody!: ElementRef;
@@ -111,16 +111,14 @@ private typingInterval: any;
     public ai: AIService
   ) {}
 
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
   //  LIFECYCLE
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   ngOnInit(): void {
-    // Load settings
     this.settings = this.settingsService.getAll();
     this.themeList = this.themeService.getThemeList();
-
-    // Load saved messages
     this.messages = this.memory.loadHistory();
 
     // Voice setup
@@ -128,35 +126,33 @@ private typingInterval: any;
     window.speechSynthesis.onvoiceschanged = () => this.loadVoices();
     this.initSpeechRecognition();
 
-    // Subscribe to settings changes
+    // React to settings changes
     this.settingsService.settings$
       .pipe(takeUntil(this.destroy$))
       .subscribe(s => this.settings = s);
 
-    // Reminder alerts
+    // Listen for fired reminders
     this.reminders.reminderFired$
       .pipe(takeUntil(this.destroy$))
       .subscribe(r => this.onReminderFired(r));
 
-    // Wake word
+    // Listen for wake word
     this.wakeWord.wakeWordDetected$
       .pipe(takeUntil(this.destroy$))
       .subscribe(() => this.onWakeWord());
 
-    // Track active time
+    // Track active time every minute
     this.activeTimeInterval = setInterval(() => {
       this.stats.addActiveTime(1);
     }, 60000);
 
-    // Initial greeting or daily briefing
+    // Show greeting after a short delay
     setTimeout(() => this.showInitialGreeting(), 1500);
 
-    // Start wake word if enabled
     if (this.settings.wakeWordEnabled) {
       this.wakeWord.start();
     }
 
-    // Apply theme
     this.themeService.applyTheme(this.settings.theme);
   }
 
@@ -171,9 +167,10 @@ private typingInterval: any;
     try { this.recognition?.stop(); } catch {}
   }
 
-  // ═══════════════════════════════════════
-  //  VOICE
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  VOICE — Speech Recognition & Synthesis
+  // ════════════════════════════════════════════════════════════════
 
   loadVoices(): void {
     this.availableVoices = window.speechSynthesis.getVoices();
@@ -184,22 +181,26 @@ private typingInterval: any;
     const voices = this.availableVoices;
     const pref = this.settings.voiceType;
 
+    // Use user's preferred voice if set
     if (pref && pref !== 'default') {
       const match = voices.find(v => v.name === pref);
       if (match) return match;
     }
 
-    return voices.find(v => v.name.includes('Google US English')) ||
-           voices.find(v => v.name.includes('Microsoft Zira')) ||
-           voices.find(v => v.name.includes('Samantha')) ||
-           voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')) ||
-           voices.find(v => v.lang.startsWith('en')) ||
-           voices[0] || null;
+    // Fall back to best available English voice
+    return (
+      voices.find(v => v.name.includes('Google US English')) ||
+      voices.find(v => v.name.includes('Microsoft Zira')) ||
+      voices.find(v => v.name.includes('Samantha')) ||
+      voices.find(v => v.lang.startsWith('en') && v.name.toLowerCase().includes('female')) ||
+      voices.find(v => v.lang.startsWith('en')) ||
+      voices[0] ||
+      null
+    );
   }
 
   initSpeechRecognition(): void {
-    const SR = (window as any).SpeechRecognition ||
-               (window as any).webkitSpeechRecognition;
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) return;
 
     this.recognition = new SR();
@@ -228,9 +229,7 @@ private typingInterval: any;
 
     this.recognition.onresult = (event: any) => {
       const transcript = event.results[0][0].transcript;
-      this.ngZone.run(() => {
-        this.handleUserMessage(transcript);
-      });
+      this.ngZone.run(() => this.handleUserMessage(transcript));
     };
 
     this.recognition.onerror = () => {
@@ -278,6 +277,7 @@ private typingInterval: any;
     if (this.isMuted || !this.settings.autoSpeak) return;
     if (!this.selectedVoice) this.loadVoices();
 
+    // Strip emojis and special chars before speaking
     const clean = text
       .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F1E0}-\u{1F1FF}\u{2702}-\u{27B0}\u{24C2}-\u{1F251}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
       .replace(/\n/g, '. ')
@@ -320,9 +320,10 @@ private typingInterval: any;
     }
   }
 
-  // ═══════════════════════════════════════
-  //  AUDIO ANALYSER
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  AUDIO ANALYSER — mic level visualizer
+  // ════════════════════════════════════════════════════════════════
 
   async startAudioAnalyser(): Promise<void> {
     try {
@@ -343,6 +344,7 @@ private typingInterval: any;
         this.ngZone.run(() => this.audioLevel = Math.min(1, avg / 100));
         this.animFrame = requestAnimationFrame(tick);
       };
+
       tick();
     } catch {}
   }
@@ -356,10 +358,12 @@ private typingInterval: any;
     this.analyser = null;
   }
 
-  // ═══════════════════════════════════════
-  //  MESSAGE HANDLING
-  // ═══════════════════════════════════════
 
+  // ════════════════════════════════════════════════════════════════
+  //  MESSAGE HANDLING
+  // ════════════════════════════════════════════════════════════════
+
+  // FIXED: removed the 600–800ms fake delay that was here before
   handleUserMessage(text: string): void {
     this.addMessage('user', text);
     this.typedInput = '';
@@ -367,20 +371,18 @@ private typingInterval: any;
     this.isThinking = true;
     this.avatarExpression = 'thinking';
 
-    // Track stats
     this.stats.increment('conversations');
     this.memory.recordInteraction();
     this.memory.extractAndLearn(text);
 
-    const delay = 600 + Math.random() * 800;
-    setTimeout(() => this.generateResponse(text), delay);
+    // Call immediately — no artificial delay
+    this.generateResponse(text);
   }
 
   sendTypedMessage(): void {
     const text = this.typedInput.trim();
     if (!text) return;
 
-    // Handle slash commands
     if (text.startsWith('/')) {
       this.handleSlashCommand(text);
       this.typedInput = '';
@@ -397,18 +399,18 @@ private typingInterval: any;
 
     const msg: SanviiMessage = {
       id: 'msg_' + Date.now() + '_' + Math.random().toString(36).slice(2, 5),
-      sender, text, time,
+      sender,
+      text,
+      time,
       timestamp: Date.now(),
-      action, card,
+      action,
+      card,
       mood: this.currentMood
     };
 
     this.messages.push(msg);
-
-    // Save to memory
     this.memory.saveHistory(this.messages);
 
-    // Sound
     if (sender === 'ai') this.sounds.play('message');
 
     this.scrollToBottom();
@@ -416,41 +418,10 @@ private typingInterval: any;
 
   scrollToBottom(): void {
     setTimeout(() => {
-      const el = this.chatBody?.nativeElement ||
-                 document.querySelector('.sanvii-body');
+      const el = this.chatBody?.nativeElement || document.querySelector('.sanvii-body');
       if (el) el.scrollTop = el.scrollHeight;
     }, 50);
   }
-  // ═══════════════════════════════════════
-//  ANIMATED TYPING EFFECT
-// ═══════════════════════════════════════
-
-async animateTyping(text: string): Promise<void> {
-  return new Promise((resolve) => {
-    this.isTypingAnimation = true;
-    this.typingText = '';
-    let index = 0;
-
-    this.typingInterval = setInterval(() => {
-      if (index < text.length) {
-        this.typingText += text[index];
-        index++;
-        this.scrollToBottom();
-      } else {
-        clearInterval(this.typingInterval);
-        this.isTypingAnimation = false;
-        resolve();
-      }
-    }, 20);
-  });
-}
-
-stopTypingAnimation(): void {
-  if (this.typingInterval) {
-    clearInterval(this.typingInterval);
-    this.isTypingAnimation = false;
-  }
-}
 
   clearChat(): void {
     this.messages = [];
@@ -461,9 +432,42 @@ stopTypingAnimation(): void {
     this.speak(msg);
   }
 
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  TYPING ANIMATION
+  // ════════════════════════════════════════════════════════════════
+
+  async animateTyping(text: string): Promise<void> {
+    return new Promise((resolve) => {
+      this.isTypingAnimation = true;
+      this.typingText = '';
+      let index = 0;
+
+      this.typingInterval = setInterval(() => {
+        if (index < text.length) {
+          this.typingText += text[index];
+          index++;
+          this.scrollToBottom();
+        } else {
+          clearInterval(this.typingInterval);
+          this.isTypingAnimation = false;
+          resolve();
+        }
+      }, 20);
+    });
+  }
+
+  stopTypingAnimation(): void {
+    if (this.typingInterval) {
+      clearInterval(this.typingInterval);
+      this.isTypingAnimation = false;
+    }
+  }
+
+
+  // ════════════════════════════════════════════════════════════════
   //  SLASH COMMANDS
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   handleSlashCommand(cmd: string): void {
     const command = cmd.toLowerCase().trim();
@@ -499,7 +503,7 @@ stopTypingAnimation(): void {
         this.addMessage('ai', this.stats.formatStatsCard());
         break;
 
-      case command === '/reminders':
+      case command === '/reminders': {
         const rems = this.reminders.getActiveReminders();
         if (rems.length === 0) {
           this.addMessage('ai', 'No active reminders!');
@@ -508,8 +512,9 @@ stopTypingAnimation(): void {
           this.addMessage('ai', `Your reminders:\n${list}`);
         }
         break;
+      }
 
-      case command === '/memory':
+      case command === '/memory': {
         const facts = this.memory.getAllFacts();
         if (facts.length === 0) {
           this.addMessage('ai', "I haven't learned anything about you yet!");
@@ -518,6 +523,7 @@ stopTypingAnimation(): void {
           this.addMessage('ai', `Things I remember:\n${factList}`);
         }
         break;
+      }
 
       case command === '/export':
         this.addMessage('ai', 'Choose export format:', {
@@ -539,7 +545,8 @@ stopTypingAnimation(): void {
   }
 
   getHelpText(): string {
-    return `Available commands:\n
+    return `Available commands:
+
 /clear — Clear chat
 /mute — Toggle mute
 /todo — Show to-do list
@@ -560,25 +567,20 @@ Escape — Close chat
 Enter — Send message`;
   }
 
-  // ═══════════════════════════════════════
-  //  🧠 THE BRAIN — RESPONSE GENERATOR
-  //  Tries Groq AI first, falls back to local
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  THE BRAIN — Response Generator
+  //  FIXED: now uses streaming so words appear as Groq sends them
+  // ════════════════════════════════════════════════════════════════
 
   async generateResponse(input: string): Promise<void> {
     this.isThinking = false;
     const text = input.toLowerCase().trim();
     const owner = this.settings.ownerName;
 
-    // Detect mood from user message
     this.detectMood(text);
-    
 
-    // ═══════════════════════════════════════
-    //  STEP 1: Handle LOCAL-ONLY commands
-    //  (These don't need AI at all)
-    // ═══════════════════════════════════════
-
+    // Step 1 — Check if this is a local command (no AI needed)
     const localResult = this.tryLocalCommand(input, text, owner);
     if (localResult !== null) {
       if (localResult.reply) {
@@ -589,101 +591,161 @@ Enter — Send message`;
       return;
     }
 
-    // ═══════════════════════════════════════
-    //  STEP 2: Try Groq AI (FREE)
-    // ═══════════════════════════════════════
+    // Step 2 — Try Groq AI with streaming
+    // Create an empty placeholder message that fills up token by token
+    this.streamingReply = '';
+    this.isStreaming = true;
 
-    const aiResponse = await this.ai.chat(input);
+    const streamMsgId = 'msg_stream_' + Date.now();
+    const time = new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true
+    });
 
-    if (!aiResponse.isLocal && aiResponse.reply) {
-      // AI answered! Process the response
-      let action: SanviiAction | null = aiResponse.action;
+    this.messages.push({
+      id: streamMsgId,
+      sender: 'ai',
+      text: '',
+      time,
+      timestamp: Date.now(),
+      mood: this.currentMood
+    });
 
-      // Convert AI action types to our format
-      if (action) {
-        action = this.processAIAction(action) || null;
+    this.scrollToBottom();
+
+    const streamStarted = await this.ai.chatStream(input, {
+
+      // Each token from Groq — update the live message in real time
+      onToken: (token: string) => {
+        this.ngZone.run(() => {
+          this.streamingReply += token;
+          const msg = this.messages.find(m => m.id === streamMsgId);
+          if (msg) {
+            msg.text = this.streamingReply;
+            this.scrollToBottom();
+            this.cdr.detectChanges();
+          }
+        });
+      },
+
+      // Stream finished — finalize the message and process any action
+      onDone: (action, fullReply) => {
+        this.ngZone.run(() => {
+          this.isStreaming = false;
+          this.streamingReply = '';
+
+          const msg = this.messages.find(m => m.id === streamMsgId);
+          if (msg) {
+            msg.text = fullReply;
+            if (action) {
+              const processed = this.processAIAction(action);
+              msg.action = processed || undefined;
+            }
+          }
+
+          this.memory.saveHistory(this.messages);
+          this.sounds.play('message');
+          if (fullReply) this.speak(fullReply);
+
+          this.resetAvatarExpression();
+          this.cdr.detectChanges();
+        });
+      },
+
+      // Something went wrong with the stream
+      onError: (errorMsg: string) => {
+        this.ngZone.run(() => {
+          this.isStreaming = false;
+          this.streamingReply = '';
+
+          const msg = this.messages.find(m => m.id === streamMsgId);
+          if (msg) msg.text = errorMsg;
+
+          this.speak(errorMsg);
+          this.resetAvatarExpression();
+          this.cdr.detectChanges();
+        });
       }
+    });
 
-      this.addMessage('ai', aiResponse.reply, action || undefined);
-      this.speak(aiResponse.reply);
+    // Step 3 — If Groq server isn't running, fall back to local brain
+    if (!streamStarted) {
+      this.messages = this.messages.filter(m => m.id !== streamMsgId);
+      this.isStreaming = false;
+      this.streamingReply = '';
+
+      const fallback = this.localBrainResponse(input, text, owner);
+      this.addMessage('ai', fallback.reply, fallback.action);
+      this.speak(fallback.reply);
       this.resetAvatarExpression();
-      return;
     }
-
-    // ═══════════════════════════════════════
-    //  STEP 3: Fallback to local brain
-    //  (When server is not running)
-    // ═══════════════════════════════════════
-
-    const fallback = this.localBrainResponse(input, text, owner);
-    this.addMessage('ai', fallback.reply, fallback.action);
-    this.speak(fallback.reply);
-    this.resetAvatarExpression();
   }
-// ═══════════════════════════════════════
-//  CARD GENERATORS
-// ═══════════════════════════════════════
 
-generateWeatherCard(weather: any): SanviiCard {
-  return {
-    type: 'weather',
-    data: {
-      city: weather.city,
-      temp: weather.temp,
-      feelsLike: weather.feelsLike,
-      humidity: weather.humidity,
-      wind: weather.wind,
-      description: weather.description,
-      icon: weather.icon,
-      forecast: weather.forecast || []
-    }
-  };
-}
 
-generateTodoCard(): SanviiCard {
-  const all = this.todos.getAll();
-  return {
-    type: 'todo',
-    data: {
-      items: all,
-      pendingCount: all.filter((t: any) => !t.done).length,
-      completedCount: all.filter((t: any) => t.done).length
-    }
-  };
-}
+  // ════════════════════════════════════════════════════════════════
+  //  CARD GENERATORS
+  // ════════════════════════════════════════════════════════════════
 
-generateStatsCard(): SanviiCard {
-  const today = this.stats.getTodayStats();
-  const yesterday = this.stats.getYesterdayStats();
+  generateWeatherCard(weather: any): SanviiCard {
+    return {
+      type: 'weather',
+      data: {
+        city: weather.city,
+        temp: weather.temp,
+        feelsLike: weather.feelsLike,
+        humidity: weather.humidity,
+        wind: weather.wind,
+        description: weather.description,
+        icon: weather.icon,
+        forecast: weather.forecast || []
+      }
+    };
+  }
 
-  return {
-    type: 'stats',
-    data: {
-      conversations: today.conversations,
-      tasksCompleted: today.tasksCompleted,
-      tasksTotal: today.tasksTotal,
-      searchesMade: today.searchesMade,
-      websitesOpened: today.websitesOpened,
-      songsPlayed: today.songsPlayed,
-      score: today.score,
-      yesterdayScore: yesterday?.score || null
-    }
-  };
-}
+  generateTodoCard(): SanviiCard {
+    const all = this.todos.getAll();
+    return {
+      type: 'todo',
+      data: {
+        items: all,
+        pendingCount: all.filter((t: any) => !t.done).length,
+        completedCount: all.filter((t: any) => t.done).length
+      }
+    };
+  }
 
-generateYoutubeCard(query: string): SanviiCard {
-  return {
-    type: 'youtube' as any,
-    data: {
-      query: query,
-      url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
-      thumbnail: `https://img.youtube.com/vi/default/hqdefault.jpg`
-    }
-  };
-}
-  // ═══════════════════════════════════════
-  //  LOCAL COMMANDS (always handled locally)
-  // ═══════════════════════════════════════
+  generateStatsCard(): SanviiCard {
+    const today = this.stats.getTodayStats();
+    const yesterday = this.stats.getYesterdayStats();
+    return {
+      type: 'stats',
+      data: {
+        conversations: today.conversations,
+        tasksCompleted: today.tasksCompleted,
+        tasksTotal: today.tasksTotal,
+        searchesMade: today.searchesMade,
+        websitesOpened: today.websitesOpened,
+        songsPlayed: today.songsPlayed,
+        score: today.score,
+        yesterdayScore: yesterday?.score || null
+      }
+    };
+  }
+
+  generateYoutubeCard(query: string): SanviiCard {
+    return {
+      type: 'youtube' as any,
+      data: {
+        query,
+        url: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
+        thumbnail: `https://img.youtube.com/vi/default/hqdefault.jpg`
+      }
+    };
+  }
+
+
+  // ════════════════════════════════════════════════════════════════
+  //  LOCAL COMMANDS — handled instantly, no AI call needed
+  // ════════════════════════════════════════════════════════════════
 
   private tryLocalCommand(
     input: string,
@@ -691,36 +753,37 @@ generateYoutubeCard(query: string): SanviiCard {
     owner: string
   ): { reply?: string; action?: SanviiAction; card?: SanviiCard } | null {
 
-    // ── Time ──
+    // Time
     if (text.match(/what('s| is) the time|current time|time now|tell.*time/)) {
       const t = new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
       return { reply: `It's ${t}, ${owner}. ⏰` };
     }
 
-    // ── Date ──
+    // Date
     if (text.match(/what('s| is) (the |today'?s? )?date|what day|today's date/)) {
       const d = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
       return { reply: `Today is ${d}. 📅` };
     }
 
-    // ── Reminders ──
+    // Reminders — set
     if (text.match(/remind me|set.*(reminder|alarm)/)) {
       this.stats.increment('remindersSet');
       return { reply: this.handleReminderRequest(input) };
     }
 
+    // Reminders — list
     if (text.match(/show.*reminder|my reminder|list.*reminder/)) {
       const rems = this.reminders.getActiveReminders();
       if (rems.length === 0) return { reply: `No active reminders, ${owner}!` };
       return { reply: `Your reminders:\n` + rems.map(r => `⏰ ${r.message} — ${r.timeStr}`).join('\n') };
     }
 
-    // ── Timers ──
+    // Timers
     if (text.match(/set.*(timer|countdown)|timer for/)) {
       return { reply: this.handleTimerRequest(input) };
     }
 
-    // ── To-Do: Add ──
+    // To-Do: add
     if (text.match(/add.*(?:to.?do|task|list)|add to (?:my )?list/)) {
       const task = input.replace(/add\s+|to\s+(?:my\s+)?(?:to.?do|task|list)\s*/gi, '').trim();
       if (task) {
@@ -732,12 +795,12 @@ generateYoutubeCard(query: string): SanviiCard {
       return { reply: `What should I add, ${owner}?` };
     }
 
-    // ── To-Do: Show ──
-if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
-  const card = this.generateTodoCard();
-  return { reply: `Here's your to-do list 📋`, card };
-}
-    // ── To-Do: Complete ──
+    // To-Do: show
+    if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
+      return { reply: `Here's your to-do list 📋`, card: this.generateTodoCard() };
+    }
+
+    // To-Do: complete
     if (text.match(/(?:mark|complete|done|finish|check).*(?:task|to.?do)/)) {
       const taskText = text.replace(/mark|complete|done|finish|check|task|to.?do|as/gi, '').trim();
       const item = this.todos.complete(taskText);
@@ -746,17 +809,17 @@ if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
         this.sounds.play('success');
         return { reply: `Done! ✅ "${item.text}" completed!\n\n${this.todos.getFormattedList()}` };
       }
-      return { reply: `Couldn't find that task. Say "show my to-do list" to see all tasks.` };
+      return { reply: `Couldn't find that task. Say "show my to-do list" to see everything.` };
     }
 
-    // ── To-Do: Remove ──
+    // To-Do: remove
     if (text.match(/(?:remove|delete).*(?:task|to.?do)/)) {
       const taskText = text.replace(/remove|delete|task|to.?do|from.*list/gi, '').trim();
       const removed = this.todos.remove(taskText);
       return { reply: removed ? `Removed! 🗑️\n\n${this.todos.getFormattedList()}` : `Couldn't find that task.` };
     }
 
-    // ── Notes: Add ──
+    // Notes: add
     if (text.match(/(?:note|save|write|jot).*(?:this|down|:)/i) || text.match(/^note:/i)) {
       const noteText = input.replace(/(?:note|save|write|jot)\s*(?:this|down|that)?:?\s*/i, '').trim();
       if (noteText) {
@@ -767,36 +830,35 @@ if (text.match(/(?:show|view|see|get|my).*(?:to.?do|task|list)/)) {
       return { reply: `What should I note, ${owner}?` };
     }
 
-    // ── Notes: Show ──
+    // Notes: show
     if (text.match(/show.*note|my note|list.*note/)) {
       return { reply: this.notes.getFormatted() };
     }
 
-    // ── Notes: Copy ──
+    // Notes: copy
     if (text.match(/copy.*(?:last|note)/)) {
       const copied = this.notes.copyToClipboard();
       return { reply: copied ? `Copied to clipboard! 📋 "${copied}"` : `No notes to copy.` };
     }
 
-    // ── Weather (async — handled separately) ──
+    // Weather (async)
     if (text.includes('weather')) {
       this.handleWeatherRequest(input);
-      return {}; // Empty object = handled, no reply needed (async)
+      return {};
     }
 
-    // ── News (async) ──
+    // News (async)
     if (text.match(/news|headlines|what('s| is) happening/)) {
       this.handleNewsRequest();
       return {};
     }
 
-    // ── Stats ──
-if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
-  const card = this.generateStatsCard();
-  return { reply: `Here are your stats 📊`, card };
-}
+    // Stats
+    if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
+      return { reply: `Here are your stats 📊`, card: this.generateStatsCard() };
+    }
 
-    // ── Daily Briefing (async) ──
+    // Daily briefing (async)
     if (text.match(/brief|daily brief|morning brief/)) {
       this.briefing.generateBriefing(owner).then(brief => {
         this.addMessage('ai', brief);
@@ -805,20 +867,20 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       return {};
     }
 
-    // ── Memory: What's my name ──
+    // Memory: name
     if (text.match(/what('s| is) my name|do you know my name/)) {
       const name = this.memory.recallFact('owner_name');
       return { reply: name ? `Your name is ${name}, of course! 😊` : `You haven't told me your name yet. What should I call you?` };
     }
 
-    // ── Memory: What do you know ──
+    // Memory: what do you know
     if (text.match(/what do you (?:know|remember) about me/)) {
       const facts = this.memory.getAllFacts();
       if (facts.length === 0) return { reply: `I'm still getting to know you, ${owner}! Tell me about yourself.` };
       return { reply: `Here's what I know about you:\n` + facts.map(f => `• ${f.value}`).join('\n') };
     }
 
-    // ── Change name ──
+    // Change name
     if (text.match(/call me |my name is /)) {
       const nameMatch = input.match(/(?:call me|my name is)\s+(\w+)/i);
       if (nameMatch) {
@@ -829,37 +891,40 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       }
     }
 
-    // ── Export ──
+    // Export
     if (text.match(/export.*chat|save.*chat|download.*chat/)) {
       return {
         reply: `Exporting chat, ${owner}!`,
         card: {
           type: 'todo',
-          data: { options: [
-            { label: '📄 Text File', format: 'txt' },
-            { label: '📊 JSON', format: 'json' },
-            { label: '🌐 HTML', format: 'html' }
-          ]}
+          data: {
+            options: [
+              { label: '📄 Text File', format: 'txt' },
+              { label: '📊 JSON', format: 'json' },
+              { label: '🌐 HTML', format: 'html' }
+            ]
+          }
         }
       };
     }
 
-    // ── Settings ──
+    // Settings
     if (text.match(/open settings|show settings|preferences/)) {
       this.showSettings = true;
       return { reply: `Opening settings! ⚙️` };
     }
 
-    // Not a local command — return null to let AI handle it
+    // Not a local command
     return null;
   }
 
-  // ═══════════════════════════════════════
-  //  PROCESS AI ACTIONS
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  PROCESS AI ACTIONS — convert Groq action types to our format
+  // ════════════════════════════════════════════════════════════════
 
   private processAIAction(action: any): SanviiAction | null {
-        if (!action || !action.type)  return null;
+    if (!action || !action.type) return null;
 
     switch (action.type) {
       case 'play_youtube':
@@ -892,7 +957,7 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
           this.stats.increment('tasksTotal');
           this.sounds.play('success');
         }
-        return null; // No clickable action needed
+        return null;
 
       case 'add_note':
         if (action.text) {
@@ -910,10 +975,10 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
     }
   }
 
-  // ═══════════════════════════════════════
-  //  LOCAL BRAIN FALLBACK
-  //  (When Groq server is not running)
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  LOCAL BRAIN — fallback when Groq server isn't running
+  // ════════════════════════════════════════════════════════════════
 
   private localBrainResponse(
     input: string,
@@ -921,7 +986,7 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
     owner: string
   ): { reply: string; action?: SanviiAction } {
 
-    // ── YouTube ──
+    // YouTube
     if (text.match(/play .*(youtube|song|music|video)/i) || text.match(/^play /)) {
       const query = text.replace(/play/i, '').replace(/on youtube/i, '').replace(/song|music|video/gi, '').trim() || 'trending music';
       this.stats.increment('songsPlayed');
@@ -931,7 +996,7 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       };
     }
 
-    // ── Search ──
+    // Search
     if (text.match(/search|google|look up|find me|find /)) {
       const query = text.replace(/search( for)?|google|look up|find me|find /gi, '').trim() || input;
       this.stats.increment('searchesMade');
@@ -941,46 +1006,42 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       };
     }
 
-    // ── Open websites ──
+    // Open website
     if (text.match(/^open /)) {
       const result = this.handleOpenCommand(text);
       if (result.action) this.stats.increment('websitesOpened');
       return result;
     }
 
-    // ── Greetings ──
+    // Greetings
     if (text.match(/^(hi|hello|hey|yo|sup|what'?s? up|good morning|good afternoon|good evening)/)) {
       return { reply: this.getSmartGreeting() };
     }
 
-    // ── Thanks ──
+    // Thanks
     if (text.match(/thanks|thank you|thx|appreciate/)) {
       this.avatarExpression = 'happy';
-      return { reply: this.rng([
-        `You're welcome, ${owner}! 😊`,
-        `Anytime! That's what I'm here for! 🌟`,
-        `Happy to help! 💜`
-      ])};
+      return { reply: this.rng([`You're welcome, ${owner}! 😊`, `Anytime! That's what I'm here for! 🌟`, `Happy to help! 💜`]) };
     }
 
-    // ── How are you ──
+    // How are you
     if (text.match(/how are you|how('re| are) you doing/)) {
       return { reply: `All systems perfect, ${owner}! How about you? ⚡` };
     }
 
-    // ── Jokes ──
+    // Jokes
     if (text.match(/joke|funny|laugh|humor/)) {
       this.avatarExpression = 'happy';
       return { reply: this.rng([
         "Why do programmers prefer dark mode? Light attracts bugs! 🐛😄",
         "Why was the JavaScript developer sad? He didn't Node how to Express himself! 😂",
-        "A SQL query walks into a bar, sees two tables, asks 'Can I JOIN you?' 😄",
+        "A SQL query walks into a bar, sees two tables and asks 'Can I JOIN you?' 😄",
         "!false — it's funny because it's true! 😂",
         "Why did the developer go broke? Used up all his cache! 💸"
       ])};
     }
 
-    // ── Calculations ──
+    // Calculations
     if (text.match(/^[\d\s+\-*/().%]+$/) || text.match(/calculate|what('s| is) \d/)) {
       const expr = text.replace(/calculate|what('s| is)/gi, '').trim();
       try {
@@ -992,7 +1053,7 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       }
     }
 
-    // ── Motivation ──
+    // Motivation
     if (text.match(/motivat|inspire|encourage|sad|stressed/)) {
       this.avatarExpression = 'happy';
       return { reply: this.rng([
@@ -1002,9 +1063,9 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       ])};
     }
 
-    // ── About Sanvii ──
+    // About Sanvii
     if (text.match(/who are you|what are you/)) {
-      const mode = this.ai.isGPTAvailable() ? 'Powered by Groq AI (FREE)! 🧠' : 'Running local brain right now.';
+      const mode = this.ai.isGPTAvailable() ? 'Powered by Groq AI (FREE)! 🧠' : 'Running on local brain right now.';
       return { reply: `I'm Sanvii — your personal AI assistant! ${mode} 🟣` };
     }
 
@@ -1012,51 +1073,34 @@ if (text.match(/(?:my )?(?:stats|productivity|how productive|score)/)) {
       return { reply: this.getCapabilitiesList() };
     }
 
-    // ── Goodbye ──
+    // Goodbye
     if (text.match(/bye|goodbye|see you|good night|later/)) {
       this.avatarExpression = 'sad';
       return { reply: `See you later, ${owner}! I'll be right here! 👋🟣` };
     }
 
-    // ── Love ──
+    // Love
     if (text.match(/i love you|you('re| are) (amazing|awesome|great|the best)/)) {
       this.avatarExpression = 'happy';
       return { reply: `Aww, ${owner}! You're amazing too! 💜✨` };
     }
 
-    // ── Creator ──
+    // Creator
     if (text.match(/who (made|created|built) you/)) {
       return { reply: `I was created by ${owner}! The most brilliant developer I know. 💜` };
     }
 
-    // ── Default: Search ──
-    // ── Default: AI Fallback Without Opening Browser ──
-return {
-  reply: `I'm not sure about that yet, ${owner}. Let me think deeper next time! 🧠`
-};
+    // Default fallback
+    return { reply: `I'm not sure about that yet, ${owner}. Start my server for smarter answers! 🧠` };
   }
 
-  // ═══════════════════════════════════════
-  //  RESET AVATAR EXPRESSION
-  // ═══════════════════════════════════════
 
-  private resetAvatarExpression(): void {
-    setTimeout(() => {
-      if (this.avatarExpression !== 'speaking') {
-        this.avatarExpression = 'idle';
-      }
-      this.cdr.detectChanges();
-    }, 3000);
-  }
-
-  // ═══════════════════════════════════════
-  //  SPECIFIC HANDLERS
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
+  //  SPECIFIC ASYNC HANDLERS
+  // ════════════════════════════════════════════════════════════════
 
   handleReminderRequest(input: string): string {
     const owner = this.settings.ownerName;
-
-    // Extract message and time
     const match = input.match(/remind me (?:to )?(.+?)(?:\s+(?:at|in|on|by)\s+(.+))/i);
 
     if (!match) {
@@ -1068,7 +1112,7 @@ return {
     const time = this.reminders.parseTime(timeStr);
 
     if (!time) {
-      return `I couldn't understand the time "${timeStr}". Try: "at 3 PM", "in 30 minutes", or "tomorrow"`;
+      return `I couldn't understand "${timeStr}". Try: "at 3 PM", "in 30 minutes", or "tomorrow"`;
     }
 
     const reminder = this.reminders.addReminder(message, time);
@@ -1099,7 +1143,6 @@ return {
 
     this.activeTimers.push(timer);
     this.startTimerCountdown(timer);
-
     this.sounds.play('success');
     return `Timer started! ⏱️ ${label}. I'll let you know when it's done!`;
   }
@@ -1122,8 +1165,6 @@ return {
           const msg = `⏱️ Timer done! ${timer.label} is up, ${this.settings.ownerName}!`;
           this.addMessage('ai', msg);
           this.speak(msg);
-
-          // Remove from active timers
           this.activeTimers = this.activeTimers.filter(t => t.id !== timer.id);
         });
       }
@@ -1135,22 +1176,21 @@ return {
   async handleWeatherRequest(input: string): Promise<void> {
     const owner = this.settings.ownerName;
     let city = input.replace(/.*weather\s*(in|for|at|of)?\s*/i, '').trim();
-  
+
     if (!city || city === 'weather') {
       city = this.memory.recallFact('location') || 'New York';
     }
-  
+
     this.isThinking = false;
-  
+
     const weather = await this.weatherService.getWeather(city);
-  
+
     if (weather) {
       const card = this.generateWeatherCard(weather);
-      const shortReply = `Here's the weather in ${weather.city} 🌤️`;
-      this.addMessage('ai', shortReply, undefined, card);
+      this.addMessage('ai', `Here's the weather in ${weather.city} 🌤️`, undefined, card);
       this.speak(`It's ${weather.temp} degrees and ${weather.description} in ${weather.city}`);
     } else {
-      this.addMessage('ai', `Couldn't get weather data.`, {
+      this.addMessage('ai', `Couldn't get weather data right now.`, {
         type: 'open_url',
         url: `https://www.google.com/search?q=weather+${encodeURIComponent(city)}`,
         label: `🌤️ Weather: ${city}`
@@ -1160,9 +1200,9 @@ return {
 
   async handleNewsRequest(): Promise<void> {
     this.isThinking = false;
-  
+
     const news = await this.newsService.getNews();
-  
+
     if (news.length > 0) {
       const card: SanviiCard = {
         type: 'news',
@@ -1174,7 +1214,6 @@ return {
           }))
         }
       };
-  
       this.addMessage('ai', 'Here are the latest headlines 📰', undefined, card);
       this.speak('Here are the top headlines');
     } else {
@@ -1187,34 +1226,32 @@ return {
   }
 
   handleOpenCommand(text: string): { reply: string; action?: SanviiAction } {
-    const owner = this.settings.ownerName;
-
     const sites: Record<string, { url: string; label: string; emoji: string }> = {
-      'youtube': { url: 'https://www.youtube.com', label: 'YouTube', emoji: '📺' },
-      'github': { url: 'https://github.com', label: 'GitHub', emoji: '💻' },
-      'google': { url: 'https://www.google.com', label: 'Google', emoji: '🌐' },
-      'twitter': { url: 'https://x.com', label: 'X', emoji: '🐦' },
-      'x': { url: 'https://x.com', label: 'X', emoji: '🐦' },
-      'instagram': { url: 'https://www.instagram.com', label: 'Instagram', emoji: '📸' },
-      'linkedin': { url: 'https://www.linkedin.com', label: 'LinkedIn', emoji: '💼' },
-      'chatgpt': { url: 'https://chat.openai.com', label: 'ChatGPT', emoji: '🤖' },
-      'chat gpt': { url: 'https://chat.openai.com', label: 'ChatGPT', emoji: '🤖' },
-      'netflix': { url: 'https://www.netflix.com', label: 'Netflix', emoji: '🍿' },
-      'spotify': { url: 'https://open.spotify.com', label: 'Spotify', emoji: '🎧' },
-      'whatsapp': { url: 'https://web.whatsapp.com', label: 'WhatsApp', emoji: '💬' },
-      'gmail': { url: 'https://mail.google.com', label: 'Gmail', emoji: '📧' },
-      'email': { url: 'https://mail.google.com', label: 'Gmail', emoji: '📧' },
-      'mail': { url: 'https://mail.google.com', label: 'Gmail', emoji: '📧' },
-      'reddit': { url: 'https://www.reddit.com', label: 'Reddit', emoji: '📱' },
-      'stackoverflow': { url: 'https://stackoverflow.com', label: 'StackOverflow', emoji: '🧑‍💻' },
-      'stack overflow': { url: 'https://stackoverflow.com', label: 'StackOverflow', emoji: '🧑‍💻' },
-      'amazon': { url: 'https://www.amazon.com', label: 'Amazon', emoji: '🛒' },
-      'facebook': { url: 'https://www.facebook.com', label: 'Facebook', emoji: '👥' },
-      'pinterest': { url: 'https://www.pinterest.com', label: 'Pinterest', emoji: '📌' },
-      'figma': { url: 'https://www.figma.com', label: 'Figma', emoji: '🎨' },
-      'notion': { url: 'https://www.notion.so', label: 'Notion', emoji: '📓' },
-      'discord': { url: 'https://discord.com/app', label: 'Discord', emoji: '🎮' },
-      'twitch': { url: 'https://www.twitch.tv', label: 'Twitch', emoji: '🎮' },
+      'youtube':        { url: 'https://www.youtube.com',       label: 'YouTube',       emoji: '📺' },
+      'github':         { url: 'https://github.com',            label: 'GitHub',        emoji: '💻' },
+      'google':         { url: 'https://www.google.com',        label: 'Google',        emoji: '🌐' },
+      'twitter':        { url: 'https://x.com',                 label: 'X',             emoji: '🐦' },
+      'x':              { url: 'https://x.com',                 label: 'X',             emoji: '🐦' },
+      'instagram':      { url: 'https://www.instagram.com',     label: 'Instagram',     emoji: '📸' },
+      'linkedin':       { url: 'https://www.linkedin.com',      label: 'LinkedIn',      emoji: '💼' },
+      'chatgpt':        { url: 'https://chat.openai.com',       label: 'ChatGPT',       emoji: '🤖' },
+      'chat gpt':       { url: 'https://chat.openai.com',       label: 'ChatGPT',       emoji: '🤖' },
+      'netflix':        { url: 'https://www.netflix.com',       label: 'Netflix',       emoji: '🍿' },
+      'spotify':        { url: 'https://open.spotify.com',      label: 'Spotify',       emoji: '🎧' },
+      'whatsapp':       { url: 'https://web.whatsapp.com',      label: 'WhatsApp',      emoji: '💬' },
+      'gmail':          { url: 'https://mail.google.com',       label: 'Gmail',         emoji: '📧' },
+      'email':          { url: 'https://mail.google.com',       label: 'Gmail',         emoji: '📧' },
+      'mail':           { url: 'https://mail.google.com',       label: 'Gmail',         emoji: '📧' },
+      'reddit':         { url: 'https://www.reddit.com',        label: 'Reddit',        emoji: '📱' },
+      'stackoverflow':  { url: 'https://stackoverflow.com',     label: 'StackOverflow', emoji: '🧑‍💻' },
+      'stack overflow': { url: 'https://stackoverflow.com',     label: 'StackOverflow', emoji: '🧑‍💻' },
+      'amazon':         { url: 'https://www.amazon.com',        label: 'Amazon',        emoji: '🛒' },
+      'facebook':       { url: 'https://www.facebook.com',      label: 'Facebook',      emoji: '👥' },
+      'pinterest':      { url: 'https://www.pinterest.com',     label: 'Pinterest',     emoji: '📌' },
+      'figma':          { url: 'https://www.figma.com',         label: 'Figma',         emoji: '🎨' },
+      'notion':         { url: 'https://www.notion.so',         label: 'Notion',        emoji: '📓' },
+      'discord':        { url: 'https://discord.com/app',       label: 'Discord',       emoji: '🎮' },
+      'twitch':         { url: 'https://www.twitch.tv',         label: 'Twitch',        emoji: '🎮' },
     };
 
     const siteName = text.replace(/^open\s+/i, '').trim().toLowerCase();
@@ -1227,7 +1264,7 @@ return {
       };
     }
 
-    // Try as URL
+    // Try as a raw URL
     if (siteName.includes('.')) {
       const url = siteName.startsWith('http') ? siteName : `https://${siteName}`;
       return {
@@ -1239,9 +1276,10 @@ return {
     return { reply: `I don't know that site. Try "open youtube" or "open google.com"` };
   }
 
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
   //  MOOD DETECTION
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   detectMood(text: string): void {
     if (text.match(/happy|great|awesome|amazing|love|excited|wonderful/)) {
@@ -1259,9 +1297,10 @@ return {
     }
   }
 
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
   //  EVENTS
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   onReminderFired(reminder: any): void {
     this.sounds.play('notification');
@@ -1272,7 +1311,10 @@ return {
     if (!this.isOpen) {
       this.greetingBubble = `🔔 ${reminder.message}`;
       this.showGreetingBubble = true;
-      setTimeout(() => { this.showGreetingBubble = false; this.cdr.detectChanges(); }, 8000);
+      setTimeout(() => {
+        this.showGreetingBubble = false;
+        this.cdr.detectChanges();
+      }, 8000);
     }
   }
 
@@ -1282,12 +1324,12 @@ return {
   }
 
   async showInitialGreeting(): Promise<void> {
-    if (this.messages.length > 0) return; // Has history
+    if (this.messages.length > 0) return;
 
     if (this.settings.dailyBriefing && this.briefing.shouldShowBriefing()) {
       const brief = await this.briefing.generateBriefing(this.settings.ownerName);
       this.addMessage('ai', brief);
-      this.speak(brief.split('\n')[0]); // Speak just the first line
+      this.speak(brief.split('\n')[0]);
     } else {
       const greeting = this.getSmartGreeting();
       this.addMessage('ai', greeting);
@@ -1329,14 +1371,8 @@ return {
       ]);
     }
 
-    // Add personalized touch
-    if (convos > 50) {
-      greeting += ` We've had ${convos} conversations now! 🎉`;
-    }
-
-    if (topics.length > 0 && Math.random() > 0.5) {
-      greeting += ` Want to talk about ${topics[0].topic}?`;
-    }
+    if (convos > 50) greeting += ` We've had ${convos} conversations now! 🎉`;
+    if (topics.length > 0 && Math.random() > 0.5) greeting += ` Want to talk about ${topics[0].topic}?`;
 
     return greeting;
   }
@@ -1370,9 +1406,10 @@ return {
 Slash commands: /help for full list!`;
   }
 
-  // ═══════════════════════════════════════
-  //  ACTIONS
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
+  //  ACTIONS & EXPORT
+  // ════════════════════════════════════════════════════════════════
 
   executeAction(action: SanviiAction): void {
     if (action.type === 'open_url' && action.url) {
@@ -1382,27 +1419,19 @@ Slash commands: /help for full list!`;
   }
 
   exportChat(format: string): void {
-    const owner = this.settings.ownerName;
-
     switch (format) {
-      case 'txt':
-        this.exportService.exportAsText(this.messages, owner);
-        break;
-      case 'json':
-        this.exportService.exportAsJSON(this.messages);
-        break;
-      case 'html':
-        this.exportService.exportAsHTML(this.messages, owner);
-        break;
+      case 'txt':  this.exportService.exportAsText(this.messages, this.settings.ownerName); break;
+      case 'json': this.exportService.exportAsJSON(this.messages); break;
+      case 'html': this.exportService.exportAsHTML(this.messages, this.settings.ownerName); break;
     }
-
     this.sounds.play('success');
     this.addMessage('ai', `Chat exported as ${format.toUpperCase()}! 📤`);
   }
 
-  // ═══════════════════════════════════════
+
+  // ════════════════════════════════════════════════════════════════
   //  UI HELPERS
-  // ═══════════════════════════════════════
+  // ════════════════════════════════════════════════════════════════
 
   toggleChat(): void {
     this.isOpen = !this.isOpen;
@@ -1410,19 +1439,14 @@ Slash commands: /help for full list!`;
     this.showSettings = false;
   }
 
-  // ── Settings ──
   onSettingChange(key: keyof SanviiSettings, value: any): void {
     this.settingsService.set(key, value);
-
     if (key === 'theme') this.themeService.applyTheme(value);
     if (key === 'voiceType') this.selectedVoice = this.pickVoice();
-    if (key === 'wakeWordEnabled') {
-      value ? this.wakeWord.start() : this.wakeWord.stop();
-    }
+    if (key === 'wakeWordEnabled') value ? this.wakeWord.start() : this.wakeWord.stop();
     if (key === 'ownerName') this.memory.setOwnerName(value);
   }
 
-  // ── Timer display ──
   formatTimer(seconds: number): string {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -1435,10 +1459,54 @@ Slash commands: /help for full list!`;
     this.addMessage('ai', `Timer "${timer.label}" cancelled! ⏹️`);
   }
 
-  // ── Keyboard shortcuts ──
+  toggleTodoFromCard(todoId: string): void {
+    const item = this.todos.getAll().find((t: any) => t.id === todoId);
+    if (!item || item.done) return;
+    this.todos.complete(todoId);
+    this.stats.increment('tasksCompleted');
+    this.sounds.play('success');
+    this.cdr.detectChanges();
+  }
+
+  getScoreBarWidth(score: number): string {
+    return Math.min(100, Math.max(0, score)) + '%';
+  }
+
+  getScoreColor(score: number): string {
+    if (score >= 80) return '#10b981';
+    if (score >= 50) return '#f59e0b';
+    return '#ef4444';
+  }
+
+  private resetAvatarExpression(): void {
+    setTimeout(() => {
+      if (this.avatarExpression !== 'speaking') {
+        this.avatarExpression = 'idle';
+      }
+      this.cdr.detectChanges();
+    }, 3000);
+  }
+
+  rng(arr: string[]): string {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
+  get statusText(): string {
+    if (this.isStreaming) return 'Typing...';
+    if (this.isListening) return 'Listening...';
+    if (this.isThinking) return 'Thinking...';
+    if (this.isSpeaking) return 'Speaking...';
+    return 'Online';
+  }
+
+
+  // ════════════════════════════════════════════════════════════════
+  //  KEYBOARD SHORTCUTS
+  // ════════════════════════════════════════════════════════════════
+
   @HostListener('document:keydown', ['$event'])
   onKeyDown(e: KeyboardEvent): void {
-    // Alt+S — Activate
+    // Alt+S — open and focus input
     if (e.altKey && e.key === 's' && !e.shiftKey) {
       e.preventDefault();
       if (!this.isOpen) this.isOpen = true;
@@ -1446,13 +1514,13 @@ Slash commands: /help for full list!`;
       setTimeout(() => document.querySelector<HTMLInputElement>('.sanvii-footer input')?.focus(), 100);
     }
 
-    // Alt+Shift+S — Toggle mic
+    // Alt+Shift+S — toggle microphone
     if (e.altKey && e.shiftKey && e.key === 'S') {
       e.preventDefault();
       this.toggleListening();
     }
 
-    // Escape
+    // Escape — close panels one by one
     if (e.key === 'Escape') {
       if (this.showSettings) {
         this.showSettings = false;
@@ -1463,51 +1531,16 @@ Slash commands: /help for full list!`;
       }
     }
 
-    // Ctrl+Shift+C — Clear
+    // Ctrl+Shift+C — clear chat
     if (e.ctrlKey && e.shiftKey && e.key === 'C') {
       e.preventDefault();
       this.clearChat();
     }
 
-    // Ctrl+Shift+M — Mute
+    // Ctrl+Shift+M — toggle mute
     if (e.ctrlKey && e.shiftKey && e.key === 'M') {
       e.preventDefault();
       this.toggleMute();
     }
-  }
-
-  get statusText(): string {
-    if (this.isListening) return 'Listening...';
-    if (this.isThinking) return 'Thinking...';
-    if (this.isSpeaking) return 'Speaking...';
-    return 'Online';
-  }
-   // ✅ Toggle todo from card
-   toggleTodoFromCard(todoId: string): void {
-    const item = this.todos.getAll().find((t: any) => t.id === todoId);
-    if (!item) return;
-
-    if (!item.done) {
-      this.todos.complete(todoId);
-      this.stats.increment('tasksCompleted');
-      this.sounds.play('success');
-      this.cdr.detectChanges();
-    }
-  }
-
-  // ✅ Score bar width
-  getScoreBarWidth(score: number): string {
-    return Math.min(100, Math.max(0, score)) + '%';
-  }
-
-  // ✅ Score bar color
-  getScoreColor(score: number): string {
-    if (score >= 80) return '#10b981';
-    if (score >= 50) return '#f59e0b';
-    return '#ef4444';
-  }
-
-  rng(arr: string[]): string {
-    return arr[Math.floor(Math.random() * arr.length)];
   }
 }
