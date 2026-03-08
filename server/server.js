@@ -1,10 +1,10 @@
 // ═══════════════════════════════════════════════════════════
 //  SANVII AI BACKEND SERVER — FIXED & OPTIMIZED
-//  ✅ Streaming responses (instant word-by-word output)
-//  ✅ Client-side history (no shared state between tabs)
-//  ✅ Retry logic on rate limits (exponential backoff)
+//  ✅ Fixed action parser (handles nested JSON)
+//  ✅ Vision endpoint (image analysis)
+//  ✅ Streaming responses
+//  ✅ Retry logic on rate limits
 //  ✅ Higher token limit (1500)
-//  ✅ No global conversation state
 // ═══════════════════════════════════════════════════════════
 
 require('dotenv').config();
@@ -14,7 +14,7 @@ const Groq = require('groq-sdk');
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '10mb' })); // raised for base64 images
 
 if (!process.env.GROQ_API_KEY) {
   console.error('');
@@ -73,7 +73,7 @@ async function callGroqWithRetry(params, retries = 3) {
       return await groq.chat.completions.create(params);
     } catch (err) {
       if (err.status === 429 && i < retries - 1) {
-        const waitMs = 1000 * Math.pow(2, i); // 1s → 2s → 4s
+        const waitMs = 1000 * Math.pow(2, i);
         console.log(`⏳ Rate limited. Retrying in ${waitMs}ms...`);
         await new Promise(r => setTimeout(r, waitMs));
       } else {
@@ -84,7 +84,7 @@ async function callGroqWithRetry(params, retries = 3) {
 }
 
 // ═══════════════════════════════════════════════
-//  BUILD MESSAGES ARRAY (shared helper)
+//  BUILD MESSAGES ARRAY
 // ═══════════════════════════════════════════════
 
 function buildMessages(message, history, context) {
@@ -112,7 +112,6 @@ function buildMessages(message, history, context) {
     }
   }
 
-  // Keep last 20 messages to avoid token overflow
   const trimmedHistory = (Array.isArray(history) ? history : []).slice(-20);
 
   return [
@@ -123,9 +122,60 @@ function buildMessages(message, history, context) {
 }
 
 // ═══════════════════════════════════════════════
-//  ✅ STREAMING CHAT ENDPOINT  (USE THIS ONE)
+//  ACTION PARSER — FIXED (handles nested JSON)
+// ═══════════════════════════════════════════════
+
+function sanitizeActionJson(str) {
+  return str
+    .replace(/'/g, '"')
+    .replace(/,\s*}/g, '}')
+    .replace(/,\s*]/g, ']')
+    .replace(/([{,]\s*)(\w+):/g, '$1"$2":');
+}
+
+function parseAction(response) {
+  let cleanReply = response || '';
+  let action = null;
+
+  const tagStart = response.indexOf('[ACTION:');
+  if (tagStart === -1) return { cleanReply, action };
+
+  const braceStart = response.indexOf('{', tagStart);
+  if (braceStart === -1) return { cleanReply, action };
+
+  // Walk forward counting brace depth to handle nested JSON
+  let depth = 0;
+  let braceEnd = -1;
+
+  for (let i = braceStart; i < response.length; i++) {
+    if (response[i] === '{') depth++;
+    else if (response[i] === '}') {
+      depth--;
+      if (depth === 0) { braceEnd = i; break; }
+    }
+  }
+
+  if (braceEnd === -1) return { cleanReply, action };
+
+  const rawJson = response.slice(braceStart, braceEnd + 1);
+  const safeJson = sanitizeActionJson(rawJson);
+
+  try {
+    action = JSON.parse(safeJson);
+    const tagEnd = response.indexOf(']', braceEnd);
+    const fullTag = response.slice(tagStart, tagEnd + 1);
+    cleanReply = response.replace(fullTag, '').replace(/\n+$/, '').trim();
+  } catch (e) {
+    console.error('❌ Action parse failed:', e.message, '| JSON:', rawJson);
+    action = null;
+  }
+
+  return { cleanReply, action };
+}
+
+// ═══════════════════════════════════════════════
+//  STREAMING CHAT ENDPOINT
 //  POST /api/chat/stream
-//  Body: { message: string, history?: [], context?: {} }
 // ═══════════════════════════════════════════════
 
 app.post('/api/chat/stream', async (req, res) => {
@@ -135,11 +185,10 @@ app.post('/api/chat/stream', async (req, res) => {
     return res.status(400).json({ error: 'No message provided' });
   }
 
-  // Set SSE headers for streaming
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.setHeader('X-Accel-Buffering', 'no');
   res.flushHeaders();
 
   try {
@@ -147,9 +196,9 @@ app.post('/api/chat/stream', async (req, res) => {
       model: 'llama-3.3-70b-versatile',
       messages: buildMessages(message, history, context),
       temperature: 0.7,
-      max_tokens: 1500,  // ✅ Raised from 800
+      max_tokens: 1500,
       top_p: 0.9,
-      stream: true       // ✅ Key change
+      stream: true
     });
 
     let fullReply = '';
@@ -162,7 +211,6 @@ app.post('/api/chat/stream', async (req, res) => {
       }
     }
 
-    // Send completion event with parsed action
     const parsed = parseAction(fullReply);
     res.write(`data: ${JSON.stringify({
       done: true,
@@ -177,19 +225,125 @@ app.post('/api/chat/stream', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Stream Error:', error.message);
-
     const errorReply =
       error.status === 429 ? "I'm thinking too fast! Give me a second, Boss. 😅" :
       error.status === 401 ? "API key issue — check your .env file, Boss! 🔑" :
       "Sorry Boss, something went wrong! 🤔";
-
     res.write(`data: ${JSON.stringify({ error: true, reply: errorReply })}\n\n`);
     res.end();
   }
 });
 
 // ═══════════════════════════════════════════════
-//  NON-STREAMING FALLBACK  (kept for compatibility)
+//  VISION ENDPOINT (NEW)
+//  POST /api/chat/vision
+//  Body: { message, imageBase64, mimeType, history?, context? }
+// ═══════════════════════════════════════════════
+
+app.post('/api/chat/vision', async (req, res) => {
+  const { message, imageBase64, mimeType = 'image/jpeg', history = [], context } = req.body;
+
+  if (!imageBase64) {
+    return res.status(400).json({ error: 'No image provided' });
+  }
+
+  // Validate size (~4MB limit)
+  const estimatedBytes = (imageBase64.length * 3) / 4;
+  if (estimatedBytes > 4 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Image too large. Max 4MB.' });
+  }
+
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!validTypes.includes(mimeType)) {
+    return res.status(400).json({ error: 'Unsupported image type. Use JPEG, PNG, WebP, or GIF.' });
+  }
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+
+  try {
+    const userPrompt = message?.trim() || 'What do you see in this image? Describe it in detail.';
+
+    // Build context string same way as text endpoint
+    const now = new Date();
+    const timeContext = `[Current time: ${now.toLocaleTimeString('en-US', {
+      hour: 'numeric', minute: '2-digit', hour12: true
+    })}, Date: ${now.toLocaleDateString('en-US', {
+      weekday: 'long', month: 'long', day: 'numeric', year: 'numeric'
+    })}]`;
+
+    let userContext = '';
+    if (context?.ownerName && context.ownerName !== 'Boss') {
+      userContext += `\nThe user's name is "${context.ownerName}". Call them by this name.`;
+    }
+
+    const stream = await groq.chat.completions.create({
+      model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+      messages: [
+        {
+          role: 'system',
+          content: SANVII_SYSTEM_PROMPT + '\n\n' + timeContext + userContext
+        },
+        // Include recent history for context (vision models have smaller ctx window)
+        ...(Array.isArray(history) ? history.slice(-6) : []),
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image_url',
+              image_url: {
+                url: `data:${mimeType};base64,${imageBase64}`
+              }
+            },
+            {
+              type: 'text',
+              text: userPrompt
+            }
+          ]
+        }
+      ],
+      temperature: 0.7,
+      max_tokens: 1500,
+      stream: true
+    });
+
+    let fullReply = '';
+
+    for await (const chunk of stream) {
+      const token = chunk.choices[0]?.delta?.content || '';
+      if (token) {
+        fullReply += token;
+        res.write(`data: ${JSON.stringify({ token })}\n\n`);
+      }
+    }
+
+    const parsed = parseAction(fullReply);
+    res.write(`data: ${JSON.stringify({
+      done: true,
+      action: parsed.action,
+      fullReply: parsed.cleanReply
+    })}\n\n`);
+    res.end();
+
+    console.log('🖼️  Vision prompt:', userPrompt.substring(0, 60));
+    console.log('🟣 Sanvii (vision):', parsed.cleanReply.substring(0, 60));
+
+  } catch (error) {
+    console.error('❌ Vision Error:', error.message);
+    const errorReply =
+      error.status === 429 ? "Too many requests! Give me a moment, Boss. 😅" :
+      error.status === 401 ? "API key issue — check your .env file, Boss! 🔑" :
+      "Couldn't analyse that image, Boss. Try again! 🤔";
+    res.write(`data: ${JSON.stringify({ error: true, reply: errorReply })}\n\n`);
+    res.end();
+  }
+});
+
+// ═══════════════════════════════════════════════
+//  NON-STREAMING FALLBACK
 //  POST /api/chat
 // ═══════════════════════════════════════════════
 
@@ -229,7 +383,6 @@ app.post('/api/chat', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Groq Error:', error.message);
-
     if (error.status === 429) {
       return res.json({ reply: "I'm thinking too fast! Give me a moment. 😅", action: null, error: 'rate_limit' });
     }
@@ -241,29 +394,6 @@ app.post('/api/chat', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════════
-//  ACTION PARSER
-// ═══════════════════════════════════════════════
-
-function parseAction(response) {
-  let cleanReply = response || '';
-  let action = null;
-
-  const actionRegex = /\[ACTION:\s*(\{[^}]+\})\]/gi;
-  const match = actionRegex.exec(response);
-
-  if (match && match[1]) {
-    try {
-      action = JSON.parse(match[1]);
-      cleanReply = response.replace(actionRegex, '').replace(/\n+$/, '').trim();
-    } catch (e) {
-      console.error('Failed to parse action:', e.message);
-    }
-  }
-
-  return { cleanReply, action };
-}
-
-// ═══════════════════════════════════════════════
 //  HEALTH CHECK
 // ═══════════════════════════════════════════════
 
@@ -272,8 +402,12 @@ app.get('/api/health', (req, res) => {
     status: 'alive',
     name: 'Sanvii AI Backend',
     provider: 'Groq',
-    model: 'Llama 3.3 70B',
+    models: {
+      text: 'Llama 3.3 70B',
+      vision: 'Llama 4 Scout 17B'
+    },
     streaming: true,
+    vision: true,
     maxTokens: 1500,
     cost: 'FREE',
     hasApiKey: !!process.env.GROQ_API_KEY,
@@ -291,12 +425,13 @@ const PORT = process.env.PORT || 3847;
 app.listen(PORT, () => {
   console.log('');
   console.log('🟣 ══════════════════════════════════════════════');
-  console.log('🟣  SANVII AI BACKEND (OPTIMIZED)');
+  console.log('🟣  SANVII AI BACKEND');
   console.log('🟣  Server:    http://localhost:' + PORT);
-  console.log('🟣  Stream:    POST /api/chat/stream  ← USE THIS');
+  console.log('🟣  Stream:    POST /api/chat/stream');
+  console.log('🟣  Vision:    POST /api/chat/vision  ← NEW');
   console.log('🟣  Fallback:  POST /api/chat');
-  console.log('🟣  Model:     Llama 3.3 70B (Groq)');
-  console.log('🟣  Streaming: ✅  |  Max tokens: 1500');
+  console.log('🟣  Text:      Llama 3.3 70B (Groq)');
+  console.log('🟣  Vision:    Llama 4 Scout 17B');
   console.log('🟣  API Key:   ' + (process.env.GROQ_API_KEY ? '✅ Loaded' : '❌ MISSING'));
   console.log('🟣 ══════════════════════════════════════════════');
   console.log('');
