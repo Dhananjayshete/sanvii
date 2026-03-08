@@ -1,16 +1,8 @@
 import { Injectable } from '@angular/core';
-import { SanviiAction, SanviiMessage } from '../models/sanvii.models';
+import { SanviiAction } from '../models/sanvii.models';
 import { MemoryService } from './memory.service';
 import { TodoService } from './todo.service';
 import { SettingsService } from './settings.service';
-
-// ═══════════════════════════════════════════════
-//  AI SERVICE — FIXED & OPTIMIZED
-//  ✅ Streaming support (word-by-word output)
-//  ✅ Client-side history (no shared server state)
-//  ✅ onToken callback for live rendering
-//  ✅ Proper abort/cleanup on errors
-// ═══════════════════════════════════════════════
 
 export interface AIResponse {
   reply: string;
@@ -22,9 +14,9 @@ export interface AIResponse {
 }
 
 export interface StreamCallbacks {
-  onToken: (token: string) => void;    // Called for each word/token
-  onDone: (action: SanviiAction | null, fullReply: string) => void;  // Called when complete
-  onError: (msg: string) => void;      // Called on failure
+  onToken: (token: string) => void;
+  onDone: (action: SanviiAction | null, fullReply: string) => void;
+  onError: (msg: string) => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -35,9 +27,11 @@ export class AIService {
   private lastCheck = 0;
   private checking = false;
 
-  // ✅ Client-side history — each browser tab owns its own history
   private conversationHistory: { role: string; content: string }[] = [];
   private readonly MAX_HISTORY = 20;
+
+  // Active reader — allows cancelling in-progress streams
+  private activeReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   constructor(
     private memory: MemoryService,
@@ -57,20 +51,20 @@ export class AIService {
     }
     if (this.checking) return this.backendAvailable;
 
-    this.checking = true;
+    this.checking  = true;
     this.lastCheck = Date.now();
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3000);
-      const response = await fetch(`${this.API_URL}/health`, { signal: controller.signal });
+      const timeoutId  = setTimeout(() => controller.abort(), 3000);
+      const response   = await fetch(`${this.API_URL}/health`, { signal: controller.signal });
       clearTimeout(timeoutId);
 
       if (response.ok) {
         const data = await response.json();
         this.backendAvailable = !!data.hasApiKey;
         console.log(this.backendAvailable
-          ? '🟣 Sanvii: ✅ Connected to Groq (FREE) — Streaming: ' + data.streaming
+          ? '🟣 Sanvii: ✅ Connected to Groq — Streaming: ' + data.streaming
           : '🟣 Sanvii: ⚠️ Server running but no API key');
       } else {
         this.backendAvailable = false;
@@ -85,26 +79,23 @@ export class AIService {
   }
 
   // ═══════════════════════════════════════
-  //  ✅ STREAMING CHAT — main method
-  //  Returns true if streaming started, false if using local brain
+  //  STREAMING CHAT
   // ═══════════════════════════════════════
 
   async chatStream(message: string, callbacks: StreamCallbacks): Promise<boolean> {
     if (!this.backendAvailable) {
-      this.checkBackend(); // Recheck in background
-      return false; // Tell component to use local brain
+      this.checkBackend();
+      return false;
     }
 
     try {
-      const context = this.buildContext();
-
       const response = await fetch(`${this.API_URL}/chat/stream`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          history: this.conversationHistory,   // ✅ Send history from client
-          context
+          history: this.conversationHistory,
+          context: this.buildContext()
         })
       });
 
@@ -112,77 +103,166 @@ export class AIService {
         throw new Error('Stream failed: ' + response.status);
       }
 
-      const reader = response.body.getReader();
+      const reader  = response.body.getReader();
+      this.activeReader = reader;
       const decoder = new TextDecoder();
-      let buffer = '';
+      let buffer    = '';
       let fullReply = '';
 
-      // ✅ Add user message to local history immediately
       this.conversationHistory.push({ role: 'user', content: message });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const rawData = line.slice(6).trim();
+            if (!rawData) continue;
 
-          const rawData = line.slice(6).trim();
-          if (!rawData) continue;
+            try {
+              const event = JSON.parse(rawData);
 
-          try {
-            const event = JSON.parse(rawData);
-
-            if (event.token) {
-              fullReply += event.token;
-              callbacks.onToken(event.token);
-            }
-
-            if (event.done) {
-              // ✅ Add AI reply to local history
-              this.conversationHistory.push({
-                role: 'assistant',
-                content: event.fullReply || fullReply
-              });
-
-              // Trim history to max
-              if (this.conversationHistory.length > this.MAX_HISTORY * 2) {
-                this.conversationHistory = this.conversationHistory.slice(-this.MAX_HISTORY * 2);
+              if (event.token) {
+                fullReply += event.token;
+                callbacks.onToken(event.token);
               }
 
-              callbacks.onDone(event.action || null, event.fullReply || fullReply);
-            }
+              if (event.done) {
+                this.conversationHistory.push({
+                  role: 'assistant',
+                  content: event.fullReply || fullReply
+                });
+                this.trimHistory();
+                callbacks.onDone(event.action || null, event.fullReply || fullReply);
+              }
 
-            if (event.error) {
-              const errorMsg = event.reply || "Sorry Boss, something went wrong! 🤔";
-              callbacks.onError(errorMsg);
-              this.backendAvailable = false;
-              this.lastCheck = 0;
-              return true; // Was handled (even as error)
-            }
+              if (event.error) {
+                callbacks.onError(event.reply || "Sorry Boss, something went wrong! 🤔");
+                this.markBackendUnreachable();
+                return true;
+              }
 
-          } catch {
-            // Skip malformed JSON lines
+            } catch { /* skip malformed JSON */ }
           }
         }
+      } finally {
+        this.activeReader = null;
       }
 
-      return true; // Stream completed successfully
+      return true;
 
     } catch (err) {
       console.warn('🟣 Stream failed, falling back to local brain:', err);
-      this.backendAvailable = false;
-      this.lastCheck = 0;
-      return false; // Fall through to local brain
+      this.markBackendUnreachable();
+      return false;
     }
   }
 
   // ═══════════════════════════════════════
-  //  NON-STREAMING FALLBACK (kept for compat)
+  //  VISION CHAT (NEW)
+  //  Sends image + optional message to /api/chat/vision
+  // ═══════════════════════════════════════
+
+  async chatVision(
+    message: string,
+    imageBase64: string,
+    mimeType: string,
+    callbacks: StreamCallbacks
+  ): Promise<boolean> {
+    if (!this.backendAvailable) {
+      this.checkBackend();
+      callbacks.onError("Server not running. Start the backend to use image analysis! 🖼️");
+      return false;
+    }
+
+    try {
+      const response = await fetch(`${this.API_URL}/chat/vision`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          imageBase64,
+          mimeType,
+          history: this.conversationHistory.slice(-6), // smaller window for vision
+          context: this.buildContext()
+        })
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error('Vision stream failed: ' + response.status);
+      }
+
+      const reader  = response.body.getReader();
+      this.activeReader = reader;
+      const decoder = new TextDecoder();
+      let buffer    = '';
+      let fullReply = '';
+
+      // Add user message (text only) to history
+      if (message) {
+        this.conversationHistory.push({ role: 'user', content: `[Image] ${message}` });
+      }
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            const rawData = line.slice(6).trim();
+            if (!rawData) continue;
+
+            try {
+              const event = JSON.parse(rawData);
+
+              if (event.token) {
+                fullReply += event.token;
+                callbacks.onToken(event.token);
+              }
+
+              if (event.done) {
+                this.conversationHistory.push({
+                  role: 'assistant',
+                  content: event.fullReply || fullReply
+                });
+                this.trimHistory();
+                callbacks.onDone(event.action || null, event.fullReply || fullReply);
+              }
+
+              if (event.error) {
+                callbacks.onError(event.reply || "Couldn't analyse that image. Try again! 🤔");
+                return true;
+              }
+
+            } catch { /* skip malformed JSON */ }
+          }
+        }
+      } finally {
+        this.activeReader = null;
+      }
+
+      return true;
+
+    } catch (err) {
+      console.warn('🟣 Vision stream failed:', err);
+      callbacks.onError("Couldn't reach the server for image analysis. Is it running? 🤔");
+      return false;
+    }
+  }
+
+  // ═══════════════════════════════════════
+  //  NON-STREAMING FALLBACK
   // ═══════════════════════════════════════
 
   async chat(message: string): Promise<AIResponse> {
@@ -192,17 +272,16 @@ export class AIService {
     }
 
     try {
-      const context = this.buildContext();
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 15000);
+      const timeoutId  = setTimeout(() => controller.abort(), 15000);
 
       const response = await fetch(`${this.API_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message,
-          history: this.conversationHistory,  // ✅ Send history from client
-          context
+          history: this.conversationHistory,
+          context: this.buildContext()
         }),
         signal: controller.signal
       });
@@ -213,57 +292,75 @@ export class AIService {
 
       const data = await response.json();
 
-      // Update local history
       this.conversationHistory.push({ role: 'user', content: message });
       this.conversationHistory.push({ role: 'assistant', content: data.reply || '' });
-      if (this.conversationHistory.length > this.MAX_HISTORY * 2) {
-        this.conversationHistory = this.conversationHistory.slice(-this.MAX_HISTORY * 2);
-      }
+      this.trimHistory();
 
       return {
-        reply: data.reply || '',
-        action: data.action || null,
-        tokens: data.tokens,
-        model: data.model,
-        error: data.error,
+        reply:   data.reply || '',
+        action:  data.action || null,
+        tokens:  data.tokens,
+        model:   data.model,
+        error:   data.error,
         isLocal: false
       };
     } catch (err) {
       console.warn('🟣 Groq failed, using local brain:', err);
-      this.backendAvailable = false;
-      this.lastCheck = 0;
+      this.markBackendUnreachable();
       return { reply: '', action: null, isLocal: true };
     }
   }
 
   // ═══════════════════════════════════════
-  //  BUILD CONTEXT from memory/settings
+  //  BUILD CONTEXT
   // ═══════════════════════════════════════
 
   private buildContext() {
     return {
-      ownerName: this.settings.get('ownerName'),
-      facts: this.memory.getAllFacts().slice(0, 15),
-      mood: this.memory.getMood(),
+      ownerName:    this.settings.get('ownerName'),
+      facts:        this.memory.getAllFacts().slice(0, 15),
+      mood:         this.memory.recallFact('mood') || 'neutral', // ✅ FIXED: was getMood()
       pendingTodos: this.todos.getPending().length
     };
   }
 
   // ═══════════════════════════════════════
-  //  CLEAR HISTORY
+  //  HISTORY HELPERS
   // ═══════════════════════════════════════
+
+  private trimHistory(): void {
+    if (this.conversationHistory.length > this.MAX_HISTORY * 2) {
+      this.conversationHistory = this.conversationHistory.slice(-this.MAX_HISTORY * 2);
+    }
+  }
 
   clearHistory(): void {
     this.conversationHistory = [];
-    console.log('🟣 Client conversation history cleared');
+    console.log('🟣 Conversation history cleared');
   }
 
-  // Kept for backward compat — no longer clears server (no server state)
   async clearServerHistory(): Promise<void> {
     this.clearHistory();
   }
 
+  // Cancel any active stream (e.g. when chat is cleared mid-response)
+  cancelStream(): void {
+    if (this.activeReader) {
+      this.activeReader.cancel();
+      this.activeReader = null;
+    }
+  }
+
+  // ═══════════════════════════════════════
+  //  STATUS
+  // ═══════════════════════════════════════
+
   isGPTAvailable(): boolean {
     return this.backendAvailable;
+  }
+
+  private markBackendUnreachable(): void {
+    this.backendAvailable = false;
+    this.lastCheck        = 0;
   }
 }

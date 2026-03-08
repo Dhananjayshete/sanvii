@@ -21,6 +21,7 @@
             <span class="header-subtitle">
               @if (isListening) { 🎤 Listening... }
               @else if (isThinking) { 🧠 Thinking... }
+              @else if (isStreaming) { ✍️ Typing... }
               @else if (isSpeaking) { 🔊 Speaking... }
               @else { {{ ai.isGPTAvailable() ? '🧠 AI Connected' : '💡 Local Mode' }} }
             </span>
@@ -125,7 +126,18 @@
 
       <!-- Messages -->
       @if (!showSettings) {
-        <div class="sanvii-body" #chatBody>
+        <div class="sanvii-body"
+             #chatBody
+             (dragover)="onDragOver($event)"
+             (dragleave)="onDragLeave($event)"
+             (drop)="onDrop($event)">
+
+          <!-- Drag Overlay -->
+          @if (isDragOver) {
+            <div class="sanvii-drop-zone">
+              <span>🖼️ Drop image here to analyse</span>
+            </div>
+          }
 
           <!-- Welcome Card -->
           @if (messages.length === 0) {
@@ -141,6 +153,7 @@
                 <button (click)="handleUserMessage('Show my to-do list')">📋 To-Do</button>
                 <button (click)="handleUserMessage('Latest news')">📰 News</button>
               </div>
+              <p class="welcome-tip">💡 Tip: Drag & drop or paste an image to analyse it!</p>
             </div>
           }
 
@@ -155,18 +168,34 @@
               }
 
               <div class="msg-wrap">
-                <!-- Text Bubble -->
-                <div [class.user-msg]="msg.sender === 'user'"
-                     [class.ai-msg]="msg.sender === 'ai'">
-                  <p class="msg-text" [innerHTML]="msg.text | sanviiFormat"></p>
 
-                  <!-- Action Button -->
-                  @if (msg.action) {
-                    <button class="action-link" (click)="executeAction(msg.action)">
-                      {{ msg.action.label || '🔗 Open' }}
-                    </button>
-                  }
-                </div>
+                <!-- Image preview in user message (vision messages) -->
+                @if (msg.card?.type === 'note' && msg.card?.data?.imagePreview) {
+                  <div [class.user-msg]="msg.sender === 'user'"
+                       [class.ai-msg]="msg.sender === 'ai'">
+                    <img class="msg-image-thumb"
+                         [src]="msg.card?.data?.imagePreview"
+                         alt="Shared image">
+                    @if (msg.card?.data?.caption) {
+                      <p class="msg-text">{{ msg.card?.data?.caption }}</p>
+                    }
+                  </div>
+                }
+
+                <!-- Text Bubble (skip for vision user messages handled above) -->
+                @if (!(msg.card?.type === 'note' && msg.card?.data?.imagePreview)) {
+                  <div [class.user-msg]="msg.sender === 'user'"
+                       [class.ai-msg]="msg.sender === 'ai'">
+                    <p class="msg-text" [innerHTML]="msg.text | sanviiFormat"></p>
+
+                    <!-- Action Button -->
+                    @if (msg.action) {
+                      <button class="action-link" (click)="executeAction(msg.action)">
+                        {{ msg.action.label || '🔗 Open' }}
+                      </button>
+                    }
+                  </div>
+                }
 
                 <!-- ═════════════════════════════════
                      RICH CARDS
@@ -178,7 +207,7 @@
                     <div class="weather-main">
                       <span class="weather-icon">{{ msg.card?.data?.icon }}</span>
                       <div class="weather-temp">
-                        <span class="temp-value">{{msg.card?.data?.temp }}°C</span>
+                        <span class="temp-value">{{ msg.card?.data?.temp }}°C</span>
                         <span class="temp-feels">Feels like {{ msg.card?.data?.feelsLike }}°C</span>
                       </div>
                     </div>
@@ -189,7 +218,7 @@
                       <span>💨 {{ msg.card?.data?.wind }} km/h</span>
                     </div>
                     @if ((msg.card?.data?.forecast?.length ?? 0) > 0) {
-                                            <div class="weather-forecast">
+                      <div class="weather-forecast">
                         @for (day of msg.card?.data?.forecast ?? []; track day.day) {
                           <div class="forecast-day">
                             <span class="fc-day">{{ day.day }}</span>
@@ -201,43 +230,39 @@
                   </div>
                 }
 
-               <!-- News Card -->
-@if (
-  msg.card?.type === 'news' &&
-  (msg.card?.data?.headlines?.length ?? 0) > 0
-) {
-  <div class="rich-card news-card">
-    @for (item of msg.card?.data?.headlines ?? []; track item.title; let i = $index) {
-      <a class="news-item" [href]="item.url" target="_blank">
-        <span class="news-num">{{ i + 1 }}</span>
-        <div class="news-content">
-          <span class="news-title">{{ item.title }}</span>
-          <span class="news-source">{{ item.source }}</span>
-        </div>
-        <span class="news-arrow">→</span>
-      </a>
-    }
-  </div>
-}<!-- To-Do Card -->
-@if (
-  msg.card?.type === 'todo' &&
-  (msg.card?.data?.items?.length ?? 0) > 0
-) {
-  <div class="rich-card todo-card">
-    <div class="todo-header">
-      <span>📋 To-Do List</span>
-      <span class="todo-count">{{ msg.card?.data?.pendingCount }} pending</span>
-    </div>
+                <!-- News Card -->
+                @if (msg.card?.type === 'news' && (msg.card?.data?.headlines?.length ?? 0) > 0) {
+                  <div class="rich-card news-card">
+                    @for (item of msg.card?.data?.headlines ?? []; track item.title; let i = $index) {
+                      <a class="news-item" [href]="item.url" target="_blank">
+                        <span class="news-num">{{ i + 1 }}</span>
+                        <div class="news-content">
+                          <span class="news-title">{{ item.title }}</span>
+                          <span class="news-source">{{ item.source }}</span>
+                        </div>
+                        <span class="news-arrow">→</span>
+                      </a>
+                    }
+                  </div>
+                }
 
-    @for (item of msg.card?.data?.items ?? []; track item.id) {
-      <div class="todo-item" [class.done]="item.done"
-           (click)="toggleTodoFromCard(item.id)">
-        <span class="todo-check">{{ item.done ? '✅' : '☐' }}</span>
-        <span class="todo-text">{{ item.text }}</span>
-      </div>
-    }
-  </div>
-}
+                <!-- To-Do Card -->
+                @if (msg.card?.type === 'todo' && (msg.card?.data?.items?.length ?? 0) > 0) {
+                  <div class="rich-card todo-card">
+                    <div class="todo-header">
+                      <span>📋 To-Do List</span>
+                      <span class="todo-count">{{ msg.card?.data?.pendingCount }} pending</span>
+                    </div>
+                    @for (item of msg.card?.data?.items ?? []; track item.id) {
+                      <div class="todo-item" [class.done]="item.done"
+                           (click)="toggleTodoFromCard(item.id)">
+                        <span class="todo-check">{{ item.done ? '✅' : '☐' }}</span>
+                        <span class="todo-text">{{ item.text }}</span>
+                      </div>
+                    }
+                  </div>
+                }
+
                 <!-- Stats Card -->
                 @if (msg.card?.type === 'stats' && msg.card?.data) {
                   <div class="rich-card stats-card">
@@ -315,13 +340,39 @@
           }
         </div>
 
+        <!-- Image Preview Pill (shown when image is ready to send) -->
+        @if (pendingImage) {
+          <div class="sanvii-image-preview">
+            <img [src]="pendingImage.preview" alt="Preview">
+            <span class="img-label">🖼️ Image ready — type a question or just send!</span>
+            <button class="img-clear" (click)="clearPendingImage()" title="Remove image">✕</button>
+          </div>
+        }
+
+        <!-- Hidden file input -->
+        <input
+          #imageInput
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/gif"
+          style="display:none"
+          (change)="onImageFileSelected($event)"
+        >
+
         <!-- Input Footer -->
         <div class="sanvii-footer">
           <input type="text"
                  [(ngModel)]="typedInput"
                  (keydown.enter)="sendTypedMessage()"
-                 [placeholder]="isListening ? '🎤 Listening...' : 'Type a message or /help...'"
+                 (paste)="onImagePaste($event)"
+                 [placeholder]="isListening ? '🎤 Listening...' : pendingImage ? '💬 Ask about the image...' : 'Type a message or /help...'"
                  [disabled]="isThinking" />
+
+          <!-- Image attach button -->
+          <button class="img-btn"
+                  title="Attach image (or drag & drop / paste Ctrl+V)"
+                  (click)="imageInput.click()">
+            🖼️
+          </button>
 
           <button class="mic-btn" [class.active]="isListening" (click)="toggleListening()">
             @if (isListening) {
@@ -342,7 +393,7 @@
           </button>
 
           <button class="send-btn"
-                  [disabled]="!typedInput.trim() || isThinking"
+                  [disabled]="(!typedInput.trim() && !pendingImage) || isThinking"
                   (click)="sendTypedMessage()">➤</button>
         </div>
       }
