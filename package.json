@@ -1,6 +1,7 @@
 {
   "name": "sanvii",
   "version": "0.0.0",
+  "main": "electron/main.js",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
@@ -8,7 +9,11 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "server": "node server/server.js",
-    "dev": "concurrently \"node server/server.js\" \"ng serve\""
+    "dev": "concurrently \"node server/server.js\" \"ng serve\"",
+    "electron": "concurrently \"node server/server.js\" \"ng serve\" \"wait-on http://localhost:4200 && electron .\"",
+    "electron:dev": "electron .",
+    "electron:build": "ng build --configuration production && electron-builder",
+    "electron:pack": "ng build --configuration production && electron-builder --dir"
   },
   "prettier": {
     "overrides": [
@@ -19,6 +24,27 @@
         }
       }
     ]
+  },
+  "build": {
+    "appId": "com.sanvii.app",
+    "productName": "Sanvii",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "electron/**/*",
+      "server/**/*",
+      "dist/sanvii/**/*",
+      ".env"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/tray-icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "private": true,
   "dependencies": {
@@ -42,12 +68,16 @@
     "@angular/cli": "^20.1.1",
     "@angular/compiler-cli": "^20.1.0",
     "@types/jasmine": "~5.1.0",
+    "electron": "^40.8.0",
+    "electron-builder": "^26.8.1",
+    "electron-reload": "^2.0.0-alpha.1",
     "jasmine-core": "~5.8.0",
     "karma": "~6.4.0",
     "karma-chrome-launcher": "~3.2.0",
     "karma-coverage": "~2.2.0",
     "karma-jasmine": "~5.1.0",
     "karma-jasmine-html-reporter": "~2.1.0",
-    "typescript": "~5.8.2"
+    "typescript": "~5.8.2",
+    "wait-on": "^8.0.5"
   }
 }
