@@ -1,44 +1,117 @@
-<div class="sanvii-container"
-     [class.pos-bottom-right]="settings.avatarPosition === 'bottom-right'"
-     [class.pos-bottom-left]="settings.avatarPosition === 'bottom-left'">
+<!-- ═══════════════════════════════════════════════════════
+     SANVII WIDGET — LUXURY GLASSMORPHISM UI
+     ═══════════════════════════════════════════════════════ -->
 
-  <!-- ═══════════════════════════════════
-       CHAT PANEL
-       ═══════════════════════════════════ -->
+     <div class="sanvii-container pos-bottom-right"
+     (dragover)="onDragOver($event)"
+     (dragleave)="onDragLeave($event)"
+     (drop)="onDrop($event)"
+     (paste)="onImagePaste($event)">
 
+  <!-- ═══════════════════════
+       ROBOT AVATAR
+       ═══════════════════════ -->
+  <div class="sanvii-avatar-wrapper" (click)="toggleChat()">
+
+    <!-- Greeting bubble -->
+    @if (showGreetingBubble && !isOpen) {
+      <div class="floating-bubble">
+        {{ greetingBubble }}
+        <div class="bubble-arrow"></div>
+      </div>
+    }
+
+    <!-- Robot -->
+    <div class="sanvii-avatar"
+         [class.speaking-animation]="isSpeaking"
+         [class.listening-animation]="isListening"
+         [class.thinking-animation]="isThinking"
+         [attr.data-expression]="avatarExpression">
+
+      <div class="robot-antenna">
+        <div class="antenna-ball"></div>
+        <div class="antenna-stick"></div>
+      </div>
+
+      <div class="robot-head">
+        <div class="robot-ear ear-left"></div>
+        <!-- Face: shows emoji fallback if image missing -->
+        <div class="robot-face-shell">
+          <img class="robot-face"
+               src="assets/sanvii.png"
+               alt="Sanvii"
+               (error)="$any($event.target).style.display='none'">
+          <span class="fallback-emoji">🤖</span>
+        </div>
+        <div class="robot-eye-row">
+          <div class="robot-eye" [class.blink]="isThinking"></div>
+          <div class="robot-eye" [class.blink]="isThinking" style="animation-delay:0.15s"></div>
+        </div>
+        <div class="robot-mouth" [class.speaking]="isSpeaking" [class.smile]="avatarExpression==='happy'"></div>
+        <div class="robot-ear ear-right"></div>
+      </div>
+
+      <div class="robot-neck"></div>
+
+      <div class="robot-body">
+        <div class="chest-led"></div>
+        <div class="chest-led"></div>
+        <div class="chest-led"></div>
+      </div>
+    </div>
+
+    <!-- Status dot -->
+    <div class="status-dot"
+         [class.recording]="isListening"
+         [class.speaking-dot]="isSpeaking"
+         [class.thinking-dot]="isThinking">
+    </div>
+
+    <!-- SANVII name -->
+    <div class="avatar-name">SANVII</div>
+  </div>
+
+
+  <!-- ═══════════════════════
+       CHAT BOX
+       ═══════════════════════ -->
   @if (isOpen) {
-    <div class="sanvii-chat" [style.width.px]="settings.chatWidth">
+    <div class="sanvii-chat">
 
-      <!-- Header -->
+      <!-- Drop zone overlay -->
+      @if (isDragOver) {
+        <div class="sanvii-drop-zone">🖼️ Drop image here</div>
+      }
+
+      <!-- ── Header ── -->
       <div class="sanvii-header">
         <div class="header-left">
-          <div class="header-dot"
-               [class.listening]="isListening"
-               [class.speaking]="isSpeaking"
-               [class.thinking]="isThinking"></div>
+          <div class="header-avatar-mini">
+            <div class="mini-robot">
+              <div class="mini-eye"></div>
+              <div class="mini-eye"></div>
+            </div>
+          </div>
           <div class="header-info">
-            <span class="header-title">Sanvii AI</span>
-            <span class="header-subtitle">
-              @if (isListening) { 🎤 Listening... }
-              @else if (isThinking) { 🧠 Thinking... }
-              @else if (isStreaming) { ✍️ Typing... }
-              @else if (isSpeaking) { 🔊 Speaking... }
-              @else { {{ ai.isGPTAvailable() ? '🧠 AI Connected' : '💡 Local Mode' }} }
+            <span class="header-title">
+              <span class="header-dot"
+                    [class.listening]="isListening"
+                    [class.speaking]="isSpeaking"
+                    [class.thinking]="isThinking"></span>
+              Sanvii
             </span>
+            <span class="header-subtitle">{{ statusText }} · AI for {{ settings.ownerName }}</span>
           </div>
         </div>
-
         <div class="header-actions">
-          <button class="hdr-btn" (click)="toggleMute()" [title]="isMuted ? 'Unmute' : 'Mute'">
-            {{ isMuted ? '🔇' : '🔊' }}
-          </button>
+          <button class="hdr-btn" (click)="clearChat()" title="Clear chat">🗑️</button>
+          <button class="hdr-btn" (click)="toggleMute()" title="Toggle mute">{{ isMuted ? '🔇' : '🔊' }}</button>
           <button class="hdr-btn" (click)="showSettings = !showSettings" title="Settings">⚙️</button>
-          <button class="hdr-btn" (click)="clearChat()" title="Clear">🗑️</button>
-          <span class="close-btn" (click)="toggleChat()">✕</span>
+          <button class="hdr-btn close-btn" (click)="toggleChat()">✕</button>
         </div>
       </div>
 
-      <!-- Active Timers -->
+      <!-- ── Active timers bar ── -->
       @if (activeTimers.length > 0) {
         <div class="timers-bar">
           @for (timer of activeTimers; track timer.id) {
@@ -50,10 +123,10 @@
         </div>
       }
 
-      <!-- Settings Panel -->
+      <!-- ── Settings panel ── -->
       @if (showSettings) {
         <div class="settings-panel">
-          <h3>⚙️ Settings</h3>
+          <h3>⚙️ Preferences</h3>
 
           <div class="setting-row">
             <label>Your Name</label>
@@ -63,7 +136,8 @@
 
           <div class="setting-row">
             <label>Theme</label>
-            <select [value]="settings.theme" (change)="onSettingChange('theme', $any($event.target).value)">
+            <select [value]="settings.theme"
+                    (change)="onSettingChange('theme', $any($event.target).value)">
               @for (t of themeList; track t.key) {
                 <option [value]="t.key">{{ t.name }}</option>
               }
@@ -71,363 +145,303 @@
           </div>
 
           <div class="setting-row">
+            <label>Voice Speed</label>
+            <input type="range" min="0.5" max="2" step="0.1"
+                   [value]="settings.voiceSpeed"
+                   (input)="onSettingChange('voiceSpeed', +$any($event.target).value)">
+            <span>{{ settings.voiceSpeed }}x</span>
+          </div>
+
+          <div class="setting-row">
+            <label>Voice Pitch</label>
+            <input type="range" min="0.5" max="2" step="0.1"
+                   [value]="settings.voicePitch"
+                   (input)="onSettingChange('voicePitch', +$any($event.target).value)">
+            <span>{{ settings.voicePitch }}</span>
+          </div>
+
+          <div class="setting-row toggle-row">
+            <label>Auto Speak</label>
+            <input type="checkbox" [checked]="settings.autoSpeak"
+                   (change)="onSettingChange('autoSpeak', $any($event.target).checked)">
+          </div>
+
+          <div class="setting-row toggle-row">
+            <label>Daily Briefing</label>
+            <input type="checkbox" [checked]="settings.dailyBriefing"
+                   (change)="onSettingChange('dailyBriefing', $any($event.target).checked)">
+          </div>
+
+          <div class="setting-row toggle-row">
+            <label>Wake Word</label>
+            <input type="checkbox" [checked]="settings.wakeWordEnabled"
+                   (change)="onSettingChange('wakeWordEnabled', $any($event.target).checked)">
+          </div>
+
+          <div class="setting-row">
             <label>Voice</label>
-            <select [value]="settings.voiceType" (change)="onSettingChange('voiceType', $any($event.target).value)">
-              <option value="default">Default</option>
+            <select [value]="settings.voiceType"
+                    (change)="onSettingChange('voiceType', $any($event.target).value)">
+              <option value="default">Auto</option>
               @for (v of availableVoices; track v.name) {
                 <option [value]="v.name">{{ v.name }}</option>
               }
             </select>
           </div>
 
-          <div class="setting-row">
-            <label>Speed</label>
-            <input type="range" min="0.5" max="2" step="0.1" [value]="settings.voiceSpeed"
-                   (input)="onSettingChange('voiceSpeed', +$any($event.target).value)">
-            <span>{{ settings.voiceSpeed }}x</span>
-          </div>
-
-          <div class="setting-row toggle-row">
-            <label>Auto-speak</label>
-            <input type="checkbox" [checked]="settings.autoSpeak"
-                   (change)="onSettingChange('autoSpeak', $any($event.target).checked)">
-          </div>
-
-          <div class="setting-row toggle-row">
-            <label>Wake word</label>
-            <input type="checkbox" [checked]="settings.wakeWordEnabled"
-                   (change)="onSettingChange('wakeWordEnabled', $any($event.target).checked)">
-          </div>
-
-          <div class="setting-row toggle-row">
-            <label>Sound effects</label>
-            <input type="checkbox" [checked]="settings.soundEffects"
-                   (change)="onSettingChange('soundEffects', $any($event.target).checked)">
-          </div>
-
-          <div class="setting-row toggle-row">
-            <label>Daily briefing</label>
-            <input type="checkbox" [checked]="settings.dailyBriefing"
-                   (change)="onSettingChange('dailyBriefing', $any($event.target).checked)">
-          </div>
-
-          <div class="setting-row">
-            <label>Position</label>
-            <select [value]="settings.avatarPosition"
-                    (change)="onSettingChange('avatarPosition', $any($event.target).value)">
-              <option value="bottom-right">Bottom Right</option>
-              <option value="bottom-left">Bottom Left</option>
-            </select>
-          </div>
-
-          <button class="settings-close-btn" (click)="showSettings = false">Done</button>
+          <button class="settings-close-btn" (click)="showSettings = false">Done ✓</button>
         </div>
       }
 
-      <!-- Messages -->
+      <!-- ── Messages ── -->
       @if (!showSettings) {
-        <div class="sanvii-body"
-             #chatBody
-             (dragover)="onDragOver($event)"
-             (dragleave)="onDragLeave($event)"
-             (drop)="onDrop($event)">
+        <div class="sanvii-body" #chatBody>
 
-          <!-- Drag Overlay -->
-          @if (isDragOver) {
-            <div class="sanvii-drop-zone">
-              <span>🖼️ Drop image here to analyse</span>
-            </div>
-          }
-
-          <!-- Welcome Card -->
+          <!-- Welcome screen -->
           @if (messages.length === 0) {
             <div class="welcome-card">
-              <div class="welcome-icon">🟣</div>
-              <p class="welcome-title">Hi, I'm Sanvii!</p>
-              <p class="welcome-sub">Your AI assistant. Try:</p>
+              <div class="welcome-orb">✦</div>
+              <div class="welcome-title">Hello, {{ settings.ownerName }}!</div>
+              <div class="welcome-sub">I'm Sanvii — your personal AI. Ask me anything or try a quick action.</div>
               <div class="quick-actions">
-                <button (click)="handleUserMessage('What can you do?')">💡 Abilities</button>
-                <button (click)="handleUserMessage('Play Kesariya on YouTube')">🎵 Music</button>
+                <button (click)="handleUserMessage('What time is it?')">⏰ Time</button>
                 <button (click)="handleUserMessage('Tell me a joke')">😂 Joke</button>
-                <button (click)="handleUserMessage('Weather in Mumbai')">🌤️ Weather</button>
-                <button (click)="handleUserMessage('Show my to-do list')">📋 To-Do</button>
-                <button (click)="handleUserMessage('Latest news')">📰 News</button>
+                <button (click)="handleWeatherRequest('weather in my city')">🌤️ Weather</button>
+                <button (click)="handleNewsRequest()">📰 News</button>
+                <button (click)="handleUserMessage('Show my to-do list')">📋 Tasks</button>
+                <button (click)="handleUserMessage('Motivate me')">💪 Motivate</button>
               </div>
-              <p class="welcome-tip">💡 Tip: Drag & drop or paste an image to analyse it!</p>
+              <div class="welcome-tip">💡 Drag & drop an image or press Ctrl+V to analyse it</div>
             </div>
           }
 
-          <!-- Message Loop -->
+          <!-- Messages -->
           @for (msg of messages; track msg.id) {
             <div class="msg-row"
                  [class.user-row]="msg.sender === 'user'"
                  [class.ai-row]="msg.sender === 'ai'">
 
-              @if (msg.sender === 'ai') {
-                <div class="msg-avatar ai-av">🟣</div>
-              }
+              <!-- Avatar -->
+              <div class="msg-avatar"
+                   [class.ai-av]="msg.sender === 'ai'"
+                   [class.user-av]="msg.sender === 'user'">
+                @if (msg.sender === 'ai') { 🤖 } @else { 👤 }
+              </div>
 
+              <!-- Bubble -->
               <div class="msg-wrap">
+                <div [class.ai-msg]="msg.sender === 'ai'"
+                     [class.user-msg]="msg.sender === 'user'">
 
-                <!-- Image preview in user message (vision messages) -->
-                @if (msg.card?.type === 'note' && msg.card?.data?.imagePreview) {
-                  <div [class.user-msg]="msg.sender === 'user'"
-                       [class.ai-msg]="msg.sender === 'ai'">
+                  <!-- Image thumb -->
+                  @if (msg.card?.data?.imagePreview) {
                     <img class="msg-image-thumb"
-                         [src]="msg.card?.data?.imagePreview"
-                         alt="Shared image">
-                    @if (msg.card?.data?.caption) {
-                      <p class="msg-text">{{ msg.card?.data?.caption }}</p>
-                    }
-                  </div>
-                }
+                         [src]="msg.card!.data!.imagePreview"
+                         alt="Attached image">
+                  }
 
-                <!-- Text Bubble (skip for vision user messages handled above) -->
-                @if (!(msg.card?.type === 'note' && msg.card?.data?.imagePreview)) {
-                  <div [class.user-msg]="msg.sender === 'user'"
-                       [class.ai-msg]="msg.sender === 'ai'">
+                  <!-- Text / thinking dots -->
+                  @if (msg.text !== '' || !isStreaming) {
                     <p class="msg-text" [innerHTML]="msg.text | sanviiFormat"></p>
-
-                    <!-- Action Button -->
-                    @if (msg.action) {
-                      <button class="action-link" (click)="executeAction(msg.action)">
-                        {{ msg.action.label || '🔗 Open' }}
-                      </button>
-                    }
-                  </div>
-                }
-
-                <!-- ═════════════════════════════════
-                     RICH CARDS
-                     ═════════════════════════════════ -->
-
-                <!-- Weather Card -->
-                @if (msg.card?.type === 'weather' && msg.card?.data) {
-                  <div class="rich-card weather-card">
-                    <div class="weather-main">
-                      <span class="weather-icon">{{ msg.card?.data?.icon }}</span>
-                      <div class="weather-temp">
-                        <span class="temp-value">{{ msg.card?.data?.temp }}°C</span>
-                        <span class="temp-feels">Feels like {{ msg.card?.data?.feelsLike }}°C</span>
-                      </div>
-                    </div>
-                    <div class="weather-city">{{ msg.card?.data?.city }}</div>
-                    <div class="weather-desc">{{ msg.card?.data?.description }}</div>
-                    <div class="weather-details">
-                      <span>💧 {{ msg.card?.data?.humidity }}%</span>
-                      <span>💨 {{ msg.card?.data?.wind }} km/h</span>
-                    </div>
-                    @if ((msg.card?.data?.forecast?.length ?? 0) > 0) {
-                      <div class="weather-forecast">
-                        @for (day of msg.card?.data?.forecast ?? []; track day.day) {
-                          <div class="forecast-day">
-                            <span class="fc-day">{{ day.day }}</span>
-                            <span class="fc-temp">{{ day.temp }}°</span>
-                          </div>
-                        }
-                      </div>
-                    }
-                  </div>
-                }
-
-                <!-- News Card -->
-                @if (msg.card?.type === 'news' && (msg.card?.data?.headlines?.length ?? 0) > 0) {
-                  <div class="rich-card news-card">
-                    @for (item of msg.card?.data?.headlines ?? []; track item.title; let i = $index) {
-                      <a class="news-item" [href]="item.url" target="_blank">
-                        <span class="news-num">{{ i + 1 }}</span>
-                        <div class="news-content">
-                          <span class="news-title">{{ item.title }}</span>
-                          <span class="news-source">{{ item.source }}</span>
-                        </div>
-                        <span class="news-arrow">→</span>
-                      </a>
-                    }
-                  </div>
-                }
-
-                <!-- To-Do Card -->
-                @if (msg.card?.type === 'todo' && (msg.card?.data?.items?.length ?? 0) > 0) {
-                  <div class="rich-card todo-card">
-                    <div class="todo-header">
-                      <span>📋 To-Do List</span>
-                      <span class="todo-count">{{ msg.card?.data?.pendingCount }} pending</span>
-                    </div>
-                    @for (item of msg.card?.data?.items ?? []; track item.id) {
-                      <div class="todo-item" [class.done]="item.done"
-                           (click)="toggleTodoFromCard(item.id)">
-                        <span class="todo-check">{{ item.done ? '✅' : '☐' }}</span>
-                        <span class="todo-text">{{ item.text }}</span>
-                      </div>
-                    }
-                  </div>
-                }
-
-                <!-- Stats Card -->
-                @if (msg.card?.type === 'stats' && msg.card?.data) {
-                  <div class="rich-card stats-card">
-                    <div class="stats-header">📊 Today's Productivity</div>
-                    <div class="stats-score">
-                      <div class="score-bar">
-                        <div class="score-fill"
-                             [style.width]="getScoreBarWidth(msg.card?.data?.score)"
-                             [style.background]="getScoreColor(msg.card?.data?.score)">
-                        </div>
-                      </div>
-                      <span class="score-value">{{ msg.card?.data?.score }}/100</span>
-                    </div>
-                    <div class="stats-grid">
-                      <div class="stat-item">
-                        <span class="stat-icon">💬</span>
-                        <span class="stat-val">{{ msg.card?.data?.conversations }}</span>
-                        <span class="stat-label">Chats</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-icon">✅</span>
-                        <span class="stat-val">{{ msg.card?.data?.tasksCompleted }}</span>
-                        <span class="stat-label">Done</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-icon">🔍</span>
-                        <span class="stat-val">{{ msg.card?.data?.searchesMade }}</span>
-                        <span class="stat-label">Searches</span>
-                      </div>
-                      <div class="stat-item">
-                        <span class="stat-icon">🎵</span>
-                        <span class="stat-val">{{ msg.card?.data?.songsPlayed }}</span>
-                        <span class="stat-label">Songs</span>
-                      </div>
-                    </div>
-                    @if (msg.card?.data?.yesterdayScore !== null) {
-                      <div class="stats-compare">
-                        {{ msg.card?.data?.score >= msg.card?.data?.yesterdayScore ? '📈' : '📉' }}
-                        {{ msg.card?.data?.score - msg.card?.data?.yesterdayScore >= 0 ? '+' : '' }}{{ msg.card?.data?.score - msg.card?.data?.yesterdayScore }} from yesterday
-                      </div>
-                    }
-                  </div>
-                }
-
-                <!-- Export Options Card -->
-                @if (msg.card?.type === 'export' || (msg.card?.type === 'todo' && msg.card?.data?.options)) {
-                  @if (msg.card?.data?.options) {
-                    <div class="rich-card export-card">
-                      @for (opt of msg.card!.data.options; track opt.format) {
-                        <button class="export-option" (click)="exportChat(opt.format)">
-                          {{ opt.label }}
-                        </button>
-                      }
+                  } @else {
+                    <div class="thinking">
+                      <span></span><span></span><span></span>
                     </div>
                   }
-                }
 
-                <span class="msg-time">{{ msg.time }}</span>
+                  <!-- Action button -->
+                  @if (msg.action?.type === 'open_url') {
+                    <div class="action-link" (click)="executeAction(msg.action!)">
+                      {{ msg.action!.label }}
+                    </div>
+                  }
+
+                  <!-- Export options -->
+                  @if (msg.action?.type === 'export') {
+                    <div class="export-options">
+                      <button class="export-btn" (click)="exportChat('txt')">📄 Text</button>
+                      <button class="export-btn" (click)="exportChat('json')">📊 JSON</button>
+                      <button class="export-btn" (click)="exportChat('html')">🌐 HTML</button>
+                    </div>
+                  }
+
+                  <!-- Rich cards -->
+                  @if (msg.card && msg.card.type) {
+                    <div class="rich-card">
+
+                      <!-- Weather -->
+                      @if (msg.card.type === 'weather') {
+                        <div class="weather-card">
+                          <div class="weather-main">
+                            <span class="weather-icon">{{ msg.card.data.icon }}</span>
+                            <div class="weather-temp">
+                              <span class="temp-value">{{ msg.card.data.temp }}°</span>
+                              <span class="temp-feels">Feels {{ msg.card.data.feelsLike }}°</span>
+                            </div>
+                          </div>
+                          <div class="weather-city">📍 {{ msg.card.data.city }}</div>
+                          <div class="weather-desc">{{ msg.card.data.description }}</div>
+                          <div class="weather-details">
+                            <span>💧 {{ msg.card.data.humidity }}%</span>
+                            <span>💨 {{ msg.card.data.wind }} km/h</span>
+                          </div>
+                          @if (msg.card.data.forecast?.length) {
+                            <div class="weather-forecast">
+                              @for (day of msg.card.data.forecast; track day.day) {
+                                <div class="forecast-day">
+                                  <span class="fc-day">{{ day.day }}</span>
+                                  <span>{{ day.icon }}</span>
+                                  <span class="fc-temp">{{ day.temp }}°</span>
+                                </div>
+                              }
+                            </div>
+                          }
+                        </div>
+                      }
+
+                      <!-- News -->
+                      @if (msg.card.type === 'news') {
+                        <div class="news-card">
+                          @for (h of msg.card.data.headlines; track h.title; let i = $index) {
+                            <div class="news-item"
+                                 (click)="executeAction({ type: 'open_url', url: h.url, label: h.title })">
+                              <div class="news-num">{{ i + 1 }}</div>
+                              <div class="news-content">
+                                <div class="news-title">{{ h.title }}</div>
+                                <div class="news-source">{{ h.source }}</div>
+                              </div>
+                              <span class="news-arrow">›</span>
+                            </div>
+                          }
+                        </div>
+                      }
+
+                      <!-- Todo -->
+                      @if (msg.card.type === 'todo') {
+                        <div class="todo-card">
+                          <div class="todo-header">
+                            📋 To-Do List
+                            <span class="todo-count">{{ msg.card.data.pendingCount }} pending</span>
+                          </div>
+                          @if (msg.card.data.items?.length === 0) {
+                            <div class="todo-empty">No tasks yet! Say "Add [task] to my list"</div>
+                          }
+                          @for (item of msg.card.data.items; track item.id) {
+                            <div class="todo-item"
+                                 [class.done]="item.done"
+                                 (click)="toggleTodoFromCard(item.id)">
+                              <span class="todo-check">{{ item.done ? '✅' : '☐' }}</span>
+                              <span class="todo-text">{{ item.text }}</span>
+                            </div>
+                          }
+                        </div>
+                      }
+
+                      <!-- Stats -->
+                      @if (msg.card.type === 'stats') {
+                        <div class="stats-card">
+                          <div class="stats-header">📊 Today's Productivity</div>
+                          <div class="stats-score">
+                            <div class="score-bar">
+                              <div class="score-fill"
+                                   [style.width]="getScoreBarWidth(msg.card.data.score)"
+                                   [style.background]="'linear-gradient(90deg,' + getScoreColor(msg.card.data.score) + ',#06b6d4)'">
+                              </div>
+                            </div>
+                            <span class="score-value">{{ msg.card.data.score }}/100</span>
+                          </div>
+                          <div class="stats-grid">
+                            <div class="stat-item">
+                              <span class="stat-icon">💬</span>
+                              <div>
+                                <div class="stat-val">{{ msg.card.data.conversations }}</div>
+                                <div class="stat-label">Chats</div>
+                              </div>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-icon">✅</span>
+                              <div>
+                                <div class="stat-val">{{ msg.card.data.tasksCompleted }}/{{ msg.card.data.tasksTotal }}</div>
+                                <div class="stat-label">Tasks</div>
+                              </div>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-icon">🔍</span>
+                              <div>
+                                <div class="stat-val">{{ msg.card.data.searchesMade }}</div>
+                                <div class="stat-label">Searches</div>
+                              </div>
+                            </div>
+                            <div class="stat-item">
+                              <span class="stat-icon">🌐</span>
+                              <div>
+                                <div class="stat-val">{{ msg.card.data.websitesOpened }}</div>
+                                <div class="stat-label">Sites</div>
+                              </div>
+                            </div>
+                          </div>
+                          @if (msg.card.data.yesterdayScore !== null) {
+                            <div class="stats-compare">Yesterday: {{ msg.card.data.yesterdayScore }}/100</div>
+                          }
+                        </div>
+                      }
+
+                    </div>
+                  }
+                </div>
+                <div class="msg-time">{{ msg.time }}</div>
               </div>
-
-              @if (msg.sender === 'user') {
-                <div class="msg-avatar user-av">👤</div>
-              }
             </div>
           }
 
-          <!-- Thinking Dots -->
-          @if (isThinking) {
-            <div class="msg-row ai-row">
-              <div class="msg-avatar ai-av">🟣</div>
-              <div class="ai-msg thinking">
-                <span>.</span><span>.</span><span>.</span>
-              </div>
-            </div>
-          }
         </div>
+      }
 
-        <!-- Image Preview Pill (shown when image is ready to send) -->
-        @if (pendingImage) {
-          <div class="sanvii-image-preview">
-            <img [src]="pendingImage.preview" alt="Preview">
-            <span class="img-label">🖼️ Image ready — type a question or just send!</span>
-            <button class="img-clear" (click)="clearPendingImage()" title="Remove image">✕</button>
-          </div>
-        }
+      <!-- ── Image preview ── -->
+      @if (pendingImage) {
+        <div class="sanvii-image-preview">
+          <img [src]="pendingImage.preview" alt="Image to send">
+          <span class="img-label">🖼️ Image ready to send</span>
+          <button class="img-clear" (click)="clearPendingImage()">✕</button>
+        </div>
+      }
 
-        <!-- Hidden file input -->
-        <input
-          #imageInput
-          type="file"
-          accept="image/jpeg,image/png,image/webp,image/gif"
-          style="display:none"
-          (change)="onImageFileSelected($event)"
-        >
-
-        <!-- Input Footer -->
+      <!-- ── Footer ── -->
+      @if (!showSettings) {
         <div class="sanvii-footer">
+          <button class="img-btn" (click)="imageInput.click()" title="Attach image">🖼️</button>
+          <input #imageInput type="file" accept="image/*" style="display:none"
+                 (change)="onImageFileSelected($event)">
+
           <input type="text"
+                 [placeholder]="isListening ? 'Listening...' : 'Ask Sanvii anything...'"
                  [(ngModel)]="typedInput"
-                 (keydown.enter)="sendTypedMessage()"
-                 (paste)="onImagePaste($event)"
-                 [placeholder]="isListening ? '🎤 Listening...' : pendingImage ? '💬 Ask about the image...' : 'Type a message or /help...'"
-                 [disabled]="isThinking" />
+                 (keyup.enter)="sendTypedMessage()"
+                 [disabled]="isStreaming">
 
-          <!-- Image attach button -->
-          <button class="img-btn"
-                  title="Attach image (or drag & drop / paste Ctrl+V)"
-                  (click)="imageInput.click()">
-            🖼️
-          </button>
-
-          <button class="mic-btn" [class.active]="isListening" (click)="toggleListening()">
+          <button class="mic-btn"
+                  [class.active]="isListening"
+                  (click)="toggleListening()">
             @if (isListening) {
               <div class="mic-waves-mini">
-                <span [style.height.px]="6 + audioLevel * 12"></span>
-                <span [style.height.px]="8 + audioLevel * 10"></span>
-                <span [style.height.px]="5 + audioLevel * 14"></span>
+                <span [style.height.px]="4 + audioLevel * 12"></span>
+                <span [style.height.px]="4 + audioLevel * 18"></span>
+                <span [style.height.px]="4 + audioLevel * 10"></span>
               </div>
             } @else {
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                   fill="currentColor" viewBox="0 0 16 16">
-                <path d="M5 3a3 3 0 0 1 6 0v5a3 3 0 0 1-6 0V3z"/>
-                <path d="M3.5 6.5A.5.5 0 0 1 4 7v1a4 4 0 0 0 8 0V7a.5.5 0 0 1 1 0v1a5
-                         5 0 0 1-4.5 4.975V15h3a.5.5 0 0 1 0 1h-7a.5.5 0 0 1 0-1h3v-2.025A5
-                         5 0 0 1 3.5 8V7a.5.5 0 0 1 .5-.5z"/>
-              </svg>
+              🎙️
             }
           </button>
 
           <button class="send-btn"
-                  [disabled]="(!typedInput.trim() && !pendingImage) || isThinking"
-                  (click)="sendTypedMessage()">➤</button>
+                  (click)="sendTypedMessage()"
+                  [disabled]="!typedInput.trim() && !pendingImage">
+            ➤
+          </button>
         </div>
       }
+
     </div>
   }
 
-  <!-- ═══════════════════════════════════
-       AVATAR (Always visible)
-       ═══════════════════════════════════ -->
-
-  <div class="sanvii-avatar-wrapper" (click)="toggleChat()">
-
-    @if (showGreetingBubble && !isOpen) {
-      <div class="floating-bubble">
-        {{ greetingBubble }}
-        <div class="bubble-arrow"></div>
-      </div>
-    }
-
-    <div class="sanvii-avatar"
-         [class.speaking-animation]="isSpeaking"
-         [class.listening-animation]="isListening"
-         [class.thinking-animation]="isThinking"
-         [attr.data-expression]="avatarExpression">
-      <img src="sanvii.png" alt="Sanvii"
-           onerror="this.style.display='none'; this.parentElement.classList.add('fallback-avatar')">
-      <span class="fallback-emoji">🟣</span>
-    </div>
-
-    <div class="status-dot"
-         [class.recording]="isListening"
-         [class.speaking-dot]="isSpeaking"
-         [class.thinking-dot]="isThinking"></div>
-
-    <div class="avatar-name">SANVII</div>
-  </div>
 </div>
